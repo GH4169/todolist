@@ -1,0 +1,1470 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Todolist</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --neon-blue: #00d4ff;
+      --neon-purple: #a855f7;
+      --neon-pink: #f472b6;
+      --neon-green: #4ade80;
+      --neon-orange: #fb923c;
+      --bg-dark: #0a0a1a;
+      --card-bg: rgba(255, 255, 255, 0.03);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --text: #e2e8f0;
+      --text-dim: #64748b;
+      --side-width: 220px;
+    }
+
+    body {
+      min-height: 100vh;
+      background: var(--bg-dark);
+      font-family: 'Inter', -apple-system, sans-serif;
+      color: var(--text);
+      overflow-x: hidden;
+    }
+
+    .bg-grid {
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
+      background-size: 50px 50px;
+      z-index: 0;
+    }
+
+    .bg-glow {
+      position: fixed;
+      width: 600px;
+      height: 600px;
+      border-radius: 50%;
+      filter: blur(150px);
+      opacity: 0.12;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .glow-1 {
+      top: -200px;
+      left: -200px;
+      background: var(--neon-blue);
+      animation: float 8s ease-in-out infinite;
+    }
+
+    .glow-2 {
+      bottom: -200px;
+      right: -200px;
+      background: var(--neon-purple);
+      animation: float 10s ease-in-out infinite reverse;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translate(0, 0); }
+      50% { transform: translate(100px, 50px); }
+    }
+
+    /* 全屏布局 */
+    .app-layout {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+      padding: 40px 0;
+    }
+
+    .app-inner {
+      display: flex;
+      gap: 24px;
+      width: 100%;
+      max-width: 960px;
+      padding: 0 24px;
+    }
+
+    /* 主内容区 */
+    .main-col {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    .header h1 {
+      font-size: 2.5rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple), var(--neon-pink));
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+      letter-spacing: -0.02em;
+    }
+
+    .header .subtitle {
+      color: var(--text-dim);
+      font-size: 0.9rem;
+    }
+
+    /* 进度环 */
+    .progress-ring {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 28px;
+    }
+
+    .progress-ring svg {
+      width: 140px;
+      height: 140px;
+      transform: rotate(-90deg);
+    }
+
+    .progress-ring circle {
+      fill: none;
+      stroke-width: 8;
+      stroke-linecap: round;
+    }
+
+    .progress-ring .bg {
+      stroke: rgba(255, 255, 255, 0.05);
+    }
+
+    .progress-ring .fill {
+      stroke: url(#gradient);
+      transition: stroke-dashoffset 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .progress-text {
+      position: absolute;
+      text-align: center;
+      margin-top: 35px;
+      width: 140px;
+    }
+
+    .progress-percent {
+      font-size: 1.8rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .progress-label {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      margin-top: 2px;
+    }
+
+    .ring-wrapper {
+      position: relative;
+      display: inline-block;
+    }
+
+    .input-section {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      padding: 24px;
+      margin-bottom: 20px;
+      backdrop-filter: blur(20px);
+    }
+
+    .input-group {
+      display: flex;
+      gap: 12px;
+    }
+
+    .input-wrapper {
+      flex: 1;
+      position: relative;
+    }
+
+    .input-wrapper::before {
+      content: '✨';
+      position: absolute;
+      left: 16px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 1rem;
+    }
+
+    .input-wrapper input {
+      width: 100%;
+      padding: 14px 16px 14px 42px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 14px;
+      color: var(--text);
+      font-size: 0.95rem;
+      outline: none;
+      transition: all 0.3s;
+      font-family: inherit;
+    }
+
+    .input-wrapper input::placeholder {
+      color: var(--text-dim);
+    }
+
+    .input-wrapper input:focus {
+      border-color: var(--neon-blue);
+      box-shadow: 0 0 20px rgba(0, 212, 255, 0.15);
+    }
+
+    .add-btn {
+      width: 50px;
+      height: 50px;
+      background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
+      border: none;
+      border-radius: 14px;
+      color: #fff;
+      font-size: 1.5rem;
+      cursor: pointer;
+      transition: all 0.3s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .add-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(0, 212, 255, 0.3);
+    }
+
+    .add-btn:active {
+      transform: translateY(0) scale(0.95);
+    }
+
+    .filters {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      padding: 0 4px;
+    }
+
+    .filter-btn {
+      flex: 1;
+      padding: 10px;
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      color: var(--text-dim);
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.3s;
+      font-family: inherit;
+    }
+
+    .filter-btn:hover {
+      border-color: rgba(0, 212, 255, 0.3);
+      color: var(--text);
+    }
+
+    .filter-btn.active {
+      background: linear-gradient(135deg, rgba(0, 212, 255, 0.1), rgba(168, 85, 247, 0.1));
+      border-color: var(--neon-blue);
+      color: var(--neon-blue);
+      box-shadow: 0 0 20px rgba(0, 212, 255, 0.1);
+    }
+
+    .todo-list {
+      list-style: none;
+    }
+
+    .todo-item {
+      padding: 16px;
+      margin-bottom: 10px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      backdrop-filter: blur(20px);
+      transition: all 0.3s;
+      animation: slideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .todo-item::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      background: linear-gradient(180deg, var(--neon-blue), var(--neon-purple));
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .todo-item:hover {
+      border-color: rgba(0, 212, 255, 0.2);
+      transform: translateX(4px);
+      box-shadow: 0 4px 20px rgba(0, 212, 255, 0.05);
+    }
+
+    .todo-item:hover::before {
+      opacity: 1;
+    }
+
+    .todo-item.done {
+      opacity: 0.55;
+    }
+
+    .todo-item.done::before {
+      background: linear-gradient(180deg, var(--neon-green), var(--neon-blue));
+      opacity: 0.5;
+    }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-10px) scale(0.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    @keyframes slideOut {
+      to { opacity: 0; transform: translateX(20px) scale(0.95); }
+    }
+
+    .todo-item.removing {
+      animation: slideOut 0.3s ease-in forwards;
+    }
+
+    .todo-main {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+    }
+
+    .checkbox {
+      width: 24px;
+      height: 24px;
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: all 0.3s;
+      margin-top: 1px;
+    }
+
+    .checkbox:hover {
+      border-color: var(--neon-blue);
+      box-shadow: 0 0 15px rgba(0, 212, 255, 0.2);
+    }
+
+    .todo-item.done .checkbox {
+      background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
+      border-color: transparent;
+      box-shadow: 0 0 15px rgba(0, 212, 255, 0.3);
+    }
+
+    .checkbox svg {
+      width: 14px;
+      height: 14px;
+      stroke: #fff;
+      stroke-width: 3;
+      fill: none;
+      opacity: 0;
+      transform: scale(0.5);
+      transition: all 0.3s;
+    }
+
+    .todo-item.done .checkbox svg {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    .todo-body {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .todo-text {
+      font-size: 0.95rem;
+      line-height: 1.5;
+      transition: all 0.3s;
+      word-break: break-word;
+    }
+
+    .todo-item.done .todo-text {
+      text-decoration: line-through;
+      text-decoration-color: rgba(255, 255, 255, 0.2);
+      text-decoration-thickness: 1px;
+      color: var(--text-dim);
+    }
+
+    .todo-text.editing {
+      outline: 1px solid var(--neon-blue);
+      outline-offset: 2px;
+      border-radius: 6px;
+      background: rgba(0, 212, 255, 0.05);
+      padding: 2px 6px;
+      box-shadow: 0 0 15px rgba(0, 212, 255, 0.1);
+      cursor: text;
+    }
+
+    .todo-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .action-btn {
+      width: 32px;
+      height: 32px;
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s;
+      opacity: 0;
+    }
+
+    .todo-item:hover .action-btn {
+      opacity: 1;
+    }
+
+    .action-btn:hover {
+      background: rgba(244, 114, 182, 0.1);
+      border-color: rgba(244, 114, 182, 0.3);
+      color: var(--neon-pink);
+      box-shadow: 0 0 15px rgba(244, 114, 182, 0.2);
+    }
+
+    .action-btn.edit-btn:hover {
+      background: rgba(0, 212, 255, 0.1);
+      border-color: rgba(0, 212, 255, 0.3);
+      color: var(--neon-blue);
+      box-shadow: 0 0 15px rgba(0, 212, 255, 0.2);
+    }
+
+    /* 子任务区 */
+    .subtask-section {
+      margin-top: 12px;
+      padding-left: 38px;
+    }
+
+    .subtask-list {
+      list-style: none;
+    }
+
+    .subtask-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 10px;
+      border-radius: 10px;
+      transition: all 0.2s;
+      animation: subSlideIn 0.3s ease-out;
+      position: relative;
+    }
+
+    @keyframes subSlideIn {
+      from { opacity: 0; transform: translateX(-10px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    @keyframes subSlideOut {
+      to { opacity: 0; transform: translateX(10px); }
+    }
+
+    .subtask-item.removing {
+      animation: subSlideOut 0.25s ease-in forwards;
+    }
+
+    .subtask-item:hover {
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .subtask-checkbox {
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(255, 255, 255, 0.15);
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: all 0.3s;
+    }
+
+    .subtask-checkbox:hover {
+      border-color: var(--neon-green);
+      box-shadow: 0 0 10px rgba(74, 222, 128, 0.2);
+    }
+
+    .subtask-item.done .subtask-checkbox {
+      background: linear-gradient(135deg, var(--neon-green), var(--neon-blue));
+      border-color: transparent;
+      box-shadow: 0 0 10px rgba(74, 222, 128, 0.2);
+    }
+
+    .subtask-checkbox svg {
+      width: 11px;
+      height: 11px;
+      stroke: #fff;
+      stroke-width: 3;
+      fill: none;
+      opacity: 0;
+      transform: scale(0.5);
+      transition: all 0.3s;
+    }
+
+    .subtask-item.done .subtask-checkbox svg {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    .subtask-text {
+      flex: 1;
+      font-size: 0.85rem;
+      color: var(--text);
+      transition: all 0.3s;
+      word-break: break-word;
+      line-height: 1.5;
+    }
+
+    .subtask-item.done .subtask-text {
+      text-decoration: line-through;
+      text-decoration-color: rgba(255, 255, 255, 0.15);
+      color: var(--text-dim);
+    }
+
+    .subtask-delete {
+      width: 24px;
+      height: 24px;
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 6px;
+      transition: all 0.2s;
+      opacity: 0;
+      flex-shrink: 0;
+    }
+
+    .subtask-item:hover .subtask-delete {
+      opacity: 1;
+    }
+
+    .subtask-delete:hover {
+      color: var(--neon-pink);
+      background: rgba(244, 114, 182, 0.1);
+    }
+
+    .subtask-add-row {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      padding: 4px 0;
+    }
+
+    .subtask-add-row.visible {
+      display: flex;
+    }
+
+    .subtask-add-row input {
+      flex: 1;
+      padding: 8px 12px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 0.85rem;
+      outline: none;
+      font-family: inherit;
+    }
+
+    .subtask-add-row input:focus {
+      border-color: var(--neon-blue);
+      box-shadow: 0 0 15px rgba(0, 212, 255, 0.1);
+    }
+
+    .subtask-add-row input::placeholder {
+      color: var(--text-dim);
+    }
+
+    .subtask-add-row .sub-confirm {
+      padding: 6px 14px;
+      background: rgba(0, 212, 255, 0.15);
+      border: 1px solid rgba(0, 212, 255, 0.3);
+      border-radius: 8px;
+      color: var(--neon-blue);
+      font-size: 0.82rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: inherit;
+    }
+
+    .subtask-add-row .sub-confirm:hover {
+      background: rgba(0, 212, 255, 0.25);
+    }
+
+    .subtask-progress {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      padding: 0 4px;
+    }
+
+    .subtask-bar-bg {
+      flex: 1;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .subtask-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--neon-green), var(--neon-blue));
+      border-radius: 2px;
+      transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 0 8px rgba(74, 222, 128, 0.3);
+    }
+
+    .subtask-count {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      white-space: nowrap;
+      min-width: 50px;
+      text-align: right;
+    }
+
+    .subtask-count .done-count {
+      color: var(--neon-green);
+    }
+
+    /* 底部 */
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 20px;
+      padding: 0 4px;
+      font-size: 0.85rem;
+      color: var(--text-dim);
+    }
+
+    .clear-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 0.85rem;
+      padding: 6px 12px;
+      border-radius: 8px;
+      transition: all 0.3s;
+      font-family: inherit;
+    }
+
+    .clear-btn:hover {
+      color: var(--neon-pink);
+      background: rgba(244, 114, 182, 0.1);
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-dim);
+    }
+
+    .empty-icon {
+      font-size: 4rem;
+      margin-bottom: 16px;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.5; }
+      50% { transform: scale(1.1); opacity: 0.8; }
+    }
+
+    .empty-state h3 {
+      color: var(--text);
+      font-size: 1.1rem;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+
+    .empty-state p {
+      font-size: 0.9rem;
+    }
+
+    /* ====== 侧边栏 ====== */
+    .side-col {
+      width: var(--side-width);
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .side-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 20px;
+      backdrop-filter: blur(20px);
+    }
+
+    .side-card-title {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-dim);
+      margin-bottom: 14px;
+      font-weight: 600;
+    }
+
+    /* 日期时间 */
+    .datetime-widget {
+      text-align: center;
+    }
+
+    .datetime-date {
+      font-size: 0.85rem;
+      color: var(--text);
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .datetime-time {
+      font-size: 2rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      line-height: 1.2;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .datetime-weekday {
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      margin-top: 4px;
+    }
+
+    /* 统计 */
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    .stat-row:last-child {
+      border-bottom: none;
+    }
+
+    .stat-label {
+      font-size: 0.82rem;
+      color: var(--text-dim);
+    }
+
+    .stat-value {
+      font-size: 0.85rem;
+      font-weight: 700;
+    }
+
+    .stat-value.blue { color: var(--neon-blue); }
+    .stat-value.green { color: var(--neon-green); }
+    .stat-value.pink { color: var(--neon-pink); }
+    .stat-value.orange { color: var(--neon-orange); }
+
+    /* 键盘快捷键 */
+    .shortcut-list {
+      list-style: none;
+    }
+
+    .shortcut-list li {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      font-size: 0.8rem;
+    }
+
+    .shortcut-list .label {
+      color: var(--text-dim);
+    }
+
+    .shortcut-list kbd {
+      display: inline-block;
+      padding: 2px 7px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 5px;
+      font-size: 0.72rem;
+      font-family: inherit;
+      color: var(--text);
+      min-width: 22px;
+      text-align: center;
+    }
+
+    /* 激励语 */
+    .quote-text {
+      font-size: 0.82rem;
+      color: var(--text-dim);
+      line-height: 1.6;
+      font-style: italic;
+    }
+
+    .quote-text::before {
+      content: '"';
+      color: var(--neon-blue);
+      font-size: 1.2rem;
+      font-style: normal;
+      font-weight: 800;
+    }
+
+    .quote-text::after {
+      content: '"';
+      color: var(--neon-blue);
+      font-size: 1.2rem;
+      font-style: normal;
+      font-weight: 800;
+    }
+
+    /* 浮动粒子 */
+    .particles {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      overflow: hidden;
+    }
+
+    .particle {
+      position: absolute;
+      width: 3px;
+      height: 3px;
+      background: var(--neon-blue);
+      border-radius: 50%;
+      opacity: 0;
+      animation: particleFloat linear infinite;
+    }
+
+    @keyframes particleFloat {
+      0% {
+        opacity: 0;
+        transform: translateY(100vh) scale(0);
+      }
+      10% {
+        opacity: 0.6;
+      }
+      90% {
+        opacity: 0.6;
+      }
+      100% {
+        opacity: 0;
+        transform: translateY(-10vh) scale(1);
+      }
+    }
+
+    /* 响应式 */
+    @media (max-width: 800px) {
+      .app-inner {
+        flex-direction: column;
+        align-items: center;
+        padding: 0 16px;
+      }
+      .side-col {
+        width: 100%;
+        max-width: 500px;
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      .side-card {
+        flex: 1;
+        min-width: 180px;
+      }
+      .main-col {
+        width: 100%;
+        max-width: 500px;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .container { padding: 40px 16px; }
+      .header h1 { font-size: 2rem; }
+      .input-group { flex-direction: column; }
+      .add-btn { width: 100%; height: 48px; }
+      .action-btn { opacity: 1; }
+      .subtask-delete { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-grid"></div>
+  <div class="bg-glow glow-1"></div>
+  <div class="bg-glow glow-2"></div>
+  <div class="particles" id="particles"></div>
+
+  <div class="app-layout">
+    <div class="app-inner">
+      <!-- 主列 -->
+      <div class="main-col">
+        <div class="header">
+          <h1>Todolist</h1>
+          <p class="subtitle">任务管理，简约高效</p>
+        </div>
+
+        <!-- 进度环 -->
+        <div class="progress-ring">
+          <div class="ring-wrapper">
+            <svg viewBox="0 0 140 140">
+              <defs>
+                <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#00d4ff" />
+                  <stop offset="100%" stop-color="#a855f7" />
+                </linearGradient>
+              </defs>
+              <circle class="bg" cx="70" cy="70" r="60" />
+              <circle class="fill" id="progressCircle" cx="70" cy="70" r="60"
+                      stroke-dasharray="377" stroke-dashoffset="377" />
+            </svg>
+            <div class="progress-text">
+              <div class="progress-percent" id="percentText">0%</div>
+              <div class="progress-label">完成率</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 输入区 -->
+        <div class="input-section">
+          <div class="input-group">
+            <div class="input-wrapper">
+              <input type="text" id="todoInput" placeholder="写下你的下一个任务..." />
+            </div>
+            <button class="add-btn" id="addBtn">+</button>
+          </div>
+        </div>
+
+        <!-- 过滤 -->
+        <div class="filters">
+          <button class="filter-btn active" data-filter="all">📋 全部</button>
+          <button class="filter-btn" data-filter="active">🔥 进行中</button>
+          <button class="filter-btn" data-filter="completed">✅ 已完成</button>
+        </div>
+
+        <!-- 任务列表 -->
+        <ul class="todo-list" id="todoList"></ul>
+
+        <!-- 底部 -->
+        <div class="footer">
+          <span id="countText">0 个任务</span>
+          <button class="clear-btn" id="clearDone">🗑️ 清除已完成</button>
+        </div>
+      </div>
+
+      <!-- 侧边栏 -->
+      <div class="side-col">
+        <!-- 日期时间 -->
+        <div class="side-card datetime-widget">
+          <div class="side-card-title">🕐 现在</div>
+          <div class="datetime-date" id="dateDisplay"></div>
+          <div class="datetime-time" id="timeDisplay"></div>
+          <div class="datetime-weekday" id="weekdayDisplay"></div>
+        </div>
+
+        <!-- 统计 -->
+        <div class="side-card">
+          <div class="side-card-title">📊 统计</div>
+          <div class="stat-row">
+            <span class="stat-label">全部任务</span>
+            <span class="stat-value blue" id="statTotal">0</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">进行中</span>
+            <span class="stat-value orange" id="statActive">0</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">已完成</span>
+            <span class="stat-value green" id="statDone">0</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">子任务</span>
+            <span class="stat-value pink" id="statSubs">0</span>
+          </div>
+        </div>
+
+        <!-- 快捷键 -->
+        <div class="side-card">
+          <div class="side-card-title">⌨️ 快捷键</div>
+          <ul class="shortcut-list">
+            <li>
+              <span class="label">添加任务</span>
+              <kbd>Enter</kbd>
+            </li>
+            <li>
+              <span class="label">切换完成</span>
+              <kbd>点击</kbd>
+            </li>
+            <li>
+              <span class="label">添加子任务</span>
+              <kbd>悬停</kbd>
+            </li>
+            <li>
+              <span class="label">确认子任务</span>
+              <kbd>Enter</kbd>
+            </li>
+            <li>
+              <span class="label">编辑任务标题</span>
+              <kbd>双击</kbd>
+            </li>
+          </ul>
+        </div>
+
+        <!-- 激励语 -->
+        <div class="side-card">
+          <div class="side-card-title">💡 每日一句</div>
+          <div class="quote-text" id="quoteText">Stay hungry, stay foolish.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let todos = JSON.parse(localStorage.getItem('geek-todos') || '[]');
+    todos = todos.map(t => ({
+      ...t,
+      subtasks: t.subtasks || []
+    }));
+    let currentFilter = 'all';
+
+    const input = document.getElementById('todoInput');
+    const addBtn = document.getElementById('addBtn');
+    const list = document.getElementById('todoList');
+    const countText = document.getElementById('countText');
+    const clearBtn = document.getElementById('clearDone');
+    const progressCircle = document.getElementById('progressCircle');
+    const percentText = document.getElementById('percentText');
+    const filterBtns = document.querySelectorAll('.filter-btn');
+
+    const circumference = 2 * Math.PI * 60;
+
+    // 激励语池
+    const quotes = [
+      "Stay hungry, stay foolish.",
+      "行动是治愈恐惧的良药。",
+      "千里之行，始于足下。",
+      "不积跬步，无以至千里。",
+      "今天的努力，是幸运的伏笔。",
+      "把简单的事做好就是不简单。",
+      "每天进步一点点。",
+      "专注当下，做好每一件事。",
+      "时间会证明你的努力。",
+      "与其抱怨，不如改变。",
+    ];
+
+    function save() {
+      localStorage.setItem('geek-todos', JSON.stringify(todos));
+    }
+
+    function uid() {
+      return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    }
+
+    function addTodo() {
+      const text = input.value.trim();
+      if (!text) return;
+      todos.unshift({ id: uid(), text, done: false, subtasks: [] });
+      input.value = '';
+      input.focus();
+      save();
+      render();
+    }
+
+    function toggleTodo(id) {
+      const t = todos.find(t => t.id === id);
+      if (t) {
+        t.done = !t.done;
+        save();
+        render();
+      }
+    }
+
+    function toggleSubtask(todoId, subId) {
+      const t = todos.find(t => t.id === todoId);
+      if (!t) return;
+      const sub = t.subtasks.find(s => s.id === subId);
+      if (sub) {
+        sub.done = !sub.done;
+        // 双向同步：所有子任务完成 → 父任务完成；有子任务取消 → 父任务取消
+        if (t.subtasks.length > 0) {
+          if (t.subtasks.every(s => s.done)) {
+            t.done = true;
+          } else if (t.done) {
+            t.done = false;
+          }
+        }
+        save();
+        render();
+      }
+    }
+
+    function addSubtask(todoId, text) {
+      const t = todos.find(t => t.id === todoId);
+      if (t && text.trim()) {
+        t.subtasks.push({ id: uid(), text: text.trim(), done: false });
+        if (t.done) t.done = false;
+        save();
+        render();
+      }
+    }
+
+    function deleteSubtask(todoId, subId) {
+      const item = document.querySelector(`.subtask-item[data-id="${subId}"]`);
+      if (item) {
+        item.classList.add('removing');
+        setTimeout(() => {
+          const t = todos.find(t => t.id === todoId);
+          if (t) {
+            t.subtasks = t.subtasks.filter(s => s.id !== subId);
+            save();
+            render();
+          }
+        }, 250);
+      }
+    }
+
+    function deleteTodo(id) {
+      const item = document.querySelector(`.todo-item[data-id="${id}"]`);
+      if (item) {
+        item.classList.add('removing');
+        setTimeout(() => {
+          todos = todos.filter(t => t.id !== id);
+          save();
+          render();
+        }, 300);
+      }
+    }
+
+    function clearCompleted() {
+      todos = todos.filter(t => !t.done);
+      save();
+      render();
+    }
+
+    function updateProgress() {
+      if (todos.length === 0) {
+        progressCircle.style.strokeDashoffset = circumference;
+        percentText.textContent = '0%';
+        return;
+      }
+      const allSubtasks = todos.flatMap(t => t.subtasks);
+      const totalItems = todos.length + allSubtasks.length;
+      if (totalItems === 0) {
+        progressCircle.style.strokeDashoffset = circumference;
+        percentText.textContent = '0%';
+        return;
+      }
+      const doneTodos = todos.filter(t => t.done).length;
+      const doneSubtasks = allSubtasks.filter(s => s.done).length;
+      const totalDone = doneTodos + doneSubtasks;
+      const percent = Math.round((totalDone / totalItems) * 100);
+      const offset = circumference - (totalDone / totalItems) * circumference;
+      progressCircle.style.strokeDashoffset = offset;
+      percentText.textContent = percent + '%';
+    }
+
+    function updateSideStats() {
+      const total = todos.length;
+      const done = todos.filter(t => t.done).length;
+      const active = total - done;
+      const subs = todos.reduce((sum, t) => sum + t.subtasks.length, 0);
+
+      document.getElementById('statTotal').textContent = total;
+      document.getElementById('statActive').textContent = active;
+      document.getElementById('statDone').textContent = done;
+      document.getElementById('statSubs').textContent = subs;
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    function render() {
+      const filtered = todos.filter(t => {
+        if (currentFilter === 'active') return !t.done;
+        if (currentFilter === 'completed') return t.done;
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        const icon = todos.length === 0 ? '🚀' : '🎉';
+        const title = todos.length === 0 ? '准备好开始了吗？' : '全部搞定！';
+        const desc = todos.length === 0 ? '添加你的第一个任务吧' : '你太棒了，继续保持！';
+        list.innerHTML = `
+          <li class="empty-state">
+            <div class="empty-icon">${icon}</div>
+            <h3>${title}</h3>
+            <p>${desc}</p>
+          </li>`;
+      } else {
+        list.innerHTML = filtered.map(t => {
+          const subtaskCount = t.subtasks.length;
+          const doneCount = t.subtasks.filter(s => s.done).length;
+          const subProgress = subtaskCount > 0
+            ? Math.round((doneCount / subtaskCount) * 100)
+            : 0;
+
+          const subAddRowHtml = `
+              <div class="subtask-add-row" id="sub-add-${t.id}" style="display:none;">
+                <input type="text" placeholder="输入子任务内容，回车确认" data-action="sub-input" data-todo-id="${t.id}" />
+                <button class="sub-confirm" data-action="confirm-sub" data-todo-id="${t.id}">添加</button>
+              </div>`;
+
+          const subtasksHtml = subtaskCount > 0 ? `
+            <div class="subtask-section">
+              <ul class="subtask-list">
+                ${t.subtasks.map(s => `
+                  <li class="subtask-item ${s.done ? 'done' : ''}" data-todo-id="${t.id}" data-id="${s.id}">
+                    <div class="subtask-checkbox" data-action="toggle-sub" data-todo-id="${t.id}" data-sub-id="${s.id}">
+                      <svg viewBox="0 0 16 16"><polyline points="2 8 6 12 14 4" /></svg>
+                    </div>
+                    <span class="subtask-text">${escapeHtml(s.text)}</span>
+                    <button class="subtask-delete" data-action="delete-sub" data-todo-id="${t.id}" data-sub-id="${s.id}" title="删除">×</button>
+                  </li>
+                `).join('')}
+              </ul>
+              <div class="subtask-progress">
+                <div class="subtask-bar-bg">
+                  <div class="subtask-bar-fill" style="width: ${subProgress}%"></div>
+                </div>
+                <span class="subtask-count"><span class="done-count">${doneCount}</span>/${subtaskCount}</span>
+              </div>
+              ${subAddRowHtml}
+            </div>
+          ` : `
+            <div class="subtask-section">
+              ${subAddRowHtml}
+            </div>
+          `;
+
+          return `
+            <li class="todo-item ${t.done ? 'done' : ''}" data-id="${t.id}">
+              <div class="todo-main">
+                <div class="checkbox" data-action="toggle">
+                  <svg viewBox="0 0 16 16"><polyline points="2 8 6 12 14 4" /></svg>
+                </div>
+                <div class="todo-body">
+                  <div class="todo-text">${escapeHtml(t.text)}</div>
+                  ${subtasksHtml}
+                </div>
+                <div class="todo-actions">
+                  <button class="action-btn sub-add-action" data-action="show-sub-add" data-todo-id="${t.id}" title="添加子任务">+</button>
+                  <button class="action-btn edit-btn" data-action="start-edit" data-id="${t.id}" title="编辑标题">✎</button>
+                  <button class="action-btn" data-action="delete" data-id="${t.id}" title="删除">✕</button>
+                </div>
+              </div>
+            </li>
+          `;
+        }).join('');
+      }
+
+      const activeCount = todos.filter(t => !t.done).length;
+      const total = todos.length;
+      countText.textContent = total === 0 ? '暂无任务' : `待办 ${activeCount} · 共 ${total} 个`;
+      clearBtn.style.display = todos.some(t => t.done) ? 'inline-block' : 'none';
+      updateProgress();
+      updateSideStats();
+    }
+
+    // 进入标题编辑模式
+    function startEditTitle(id) {
+      const t = todos.find(t => t.id === id);
+      if (!t) return;
+      const textEl = document.querySelector(`.todo-item[data-id="${id}"] .todo-text`);
+      if (!textEl) return;
+
+      textEl.contentEditable = 'true';
+      textEl.classList.add('editing');
+      textEl.focus();
+
+      // 选中全部文字
+      const range = document.createRange();
+      range.selectNodeContents(textEl);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+
+      const finish = () => {
+        const newText = textEl.textContent.trim();
+        if (newText) {
+          t.text = newText;
+          save();
+        }
+        textEl.contentEditable = 'false';
+        textEl.classList.remove('editing');
+        render();
+      };
+
+      textEl.addEventListener('blur', finish, { once: true });
+      textEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); textEl.blur(); }
+        if (e.key === 'Escape') {
+          textEl.textContent = t.text; // 还原
+          textEl.blur();
+        }
+      });
+    }
+
+    // 主列表点击
+    list.addEventListener('click', (e) => {
+      const item = e.target.closest('.todo-item');
+      if (!item) return;
+      const actionEl = e.target.closest('[data-action]');
+      const action = actionEl ? actionEl.dataset.action : '';
+      const todoId = item.dataset.id;
+
+      if (action === 'toggle') {
+        toggleTodo(todoId);
+      } else if (action === 'delete') {
+        deleteTodo(actionEl.dataset.id);
+      } else if (action === 'toggle-sub') {
+        e.stopPropagation();
+        const subId = actionEl.dataset.subId;
+        toggleSubtask(actionEl.dataset.todoId, subId);
+      } else if (action === 'delete-sub') {
+        e.stopPropagation();
+        const subId = actionEl.dataset.subId;
+        deleteSubtask(actionEl.dataset.todoId, subId);
+      } else if (action === 'show-sub-add') {
+        e.stopPropagation();
+        const targetTodoId = actionEl.dataset.todoId;
+        const addRow = document.getElementById(`sub-add-${targetTodoId}`);
+        const isVisible = addRow.style.display !== 'none';
+        document.querySelectorAll('.subtask-add-row').forEach(el => { el.style.display = 'none'; });
+        if (!isVisible) {
+          addRow.style.display = 'flex';
+          const inp = addRow.querySelector('input');
+          inp.value = '';
+          inp.focus();
+        }
+      } else if (action === 'confirm-sub') {
+        e.stopPropagation();
+        const targetTodoId = actionEl.dataset.todoId;
+        const row = document.getElementById(`sub-add-${targetTodoId}`);
+        const inp = row.querySelector('input');
+        if (inp.value.trim()) addSubtask(targetTodoId, inp.value);
+      } else if (action === 'start-edit') {
+        e.stopPropagation();
+        startEditTitle(actionEl.dataset.id);
+      }
+    });
+
+    // 双击标题直接编辑
+    list.addEventListener('dblclick', (e) => {
+      const textEl = e.target.closest('.todo-text');
+      if (!textEl) return;
+      const item = textEl.closest('.todo-item');
+      if (!item) return;
+      e.preventDefault();
+      startEditTitle(item.dataset.id);
+    });
+
+    list.addEventListener('keydown', (e) => {
+      if (e.target.dataset.action === 'sub-input' && e.key === 'Enter') {
+        e.stopPropagation();
+        const todoId = e.target.dataset.todoId;
+        if (e.target.value.trim()) addSubtask(todoId, e.target.value);
+      }
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.subtask-add-row')) {
+        document.querySelectorAll('.subtask-add-row').forEach(el => { el.style.display = 'none'; });
+      }
+    });
+
+    addBtn.addEventListener('click', addTodo);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') addTodo(); });
+
+    filterBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        filterBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentFilter = btn.dataset.filter;
+        render();
+      });
+    });
+
+    clearBtn.addEventListener('click', clearCompleted);
+
+    // ====== 日期时间 ======
+    function updateDateTime() {
+      const now = new Date();
+      const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+      const weekdays = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
+
+      document.getElementById('dateDisplay').textContent =
+        `${now.getFullYear()}年 ${months[now.getMonth()]} ${now.getDate()}日`;
+      document.getElementById('timeDisplay').textContent =
+        now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+      document.getElementById('weekdayDisplay').textContent = weekdays[now.getDay()];
+    }
+
+    // ====== 浮动粒子 ======
+    function createParticles() {
+      const container = document.getElementById('particles');
+      const colors = ['var(--neon-blue)', 'var(--neon-purple)', 'var(--neon-pink)', 'var(--neon-green)'];
+      for (let i = 0; i < 20; i++) {
+        const p = document.createElement('div');
+        p.className = 'particle';
+        p.style.left = Math.random() * 100 + '%';
+        p.style.animationDuration = (8 + Math.random() * 12) + 's';
+        p.style.animationDelay = (Math.random() * 10) + 's';
+        p.style.width = p.style.height = (2 + Math.random() * 3) + 'px';
+        p.style.background = colors[Math.floor(Math.random() * colors.length)];
+        container.appendChild(p);
+      }
+    }
+
+    // ====== 激励语（每天换一条） ======
+    function setDailyQuote() {
+      const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
+      document.getElementById('quoteText').textContent = quotes[dayOfYear % quotes.length];
+    }
+
+    // 初始化
+    createParticles();
+    setDailyQuote();
+    updateDateTime();
+    setInterval(updateDateTime, 1000);
+    render();
+  </script>
+</body>
+</html>
