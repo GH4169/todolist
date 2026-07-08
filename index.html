@@ -340,6 +340,48 @@
       animation: slideOut 0.3s ease-in forwards;
     }
 
+    .drag-handle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 24px;
+      color: rgba(255, 255, 255, 0.15);
+      cursor: grab;
+      flex-shrink: 0;
+      font-size: 16px;
+      letter-spacing: -3px;
+      user-select: none;
+      transition: color 0.3s;
+      margin-top: -2px;
+      line-height: 1;
+    }
+
+    .todo-item:hover .drag-handle {
+      color: rgba(255, 255, 255, 0.35);
+    }
+
+    .drag-handle:active {
+      cursor: grabbing;
+    }
+
+    .todo-item.dragging {
+      opacity: 0.35;
+      border-color: var(--neon-blue);
+      box-shadow: 0 0 25px rgba(0, 212, 255, 0.15);
+    }
+
+    .todo-item.drag-over {
+      border-color: var(--neon-purple);
+      box-shadow: 0 0 25px rgba(168, 85, 247, 0.2);
+      transform: translateY(3px);
+    }
+
+    .todo-item.drag-over::before {
+      opacity: 1;
+      background: linear-gradient(180deg, var(--neon-purple), var(--neon-pink));
+    }
+
     .todo-main {
       display: flex;
       align-items: flex-start;
@@ -461,6 +503,69 @@
     .subtask-section {
       margin-top: 12px;
       padding-left: 38px;
+      overflow: hidden;
+      transition: max-height 0.35s ease, opacity 0.3s ease, margin 0.35s ease;
+      max-height: 800px;
+      opacity: 1;
+    }
+
+    .subtask-section.collapsed {
+      max-height: 0;
+      opacity: 0;
+      margin-top: 0;
+      padding-top: 0;
+      padding-bottom: 0;
+    }
+
+    .collapse-toggle {
+      width: 28px;
+      height: 28px;
+      background: none;
+      border: none;
+      color: rgba(255, 255, 255, 0.3);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: all 0.3s;
+      border-radius: 6px;
+      margin-top: 1px;
+      padding: 0;
+    }
+
+    .collapse-toggle:hover {
+      color: rgba(255, 255, 255, 0.6);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .collapse-chevron {
+      width: 12px;
+      height: 12px;
+      stroke: currentColor;
+      stroke-width: 2;
+      fill: none;
+      transition: transform 0.3s ease;
+    }
+
+    .collapse-chevron.collapsed {
+      transform: rotate(-90deg);
+    }
+
+    .progress-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: rgba(168, 85, 247, 0.15);
+      color: var(--neon-purple);
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 10px;
+      margin-right: 8px;
+      border: 1px solid rgba(168, 85, 247, 0.25);
+      white-space: nowrap;
+      letter-spacing: 0.02em;
     }
 
     .subtask-list {
@@ -574,6 +679,39 @@
     .subtask-delete:hover {
       color: var(--neon-pink);
       background: rgba(244, 114, 182, 0.1);
+    }
+
+    .subtask-drag-handle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 18px;
+      color: rgba(255, 255, 255, 0.12);
+      cursor: grab;
+      flex-shrink: 0;
+      font-size: 14px;
+      letter-spacing: -2px;
+      user-select: none;
+      transition: color 0.3s;
+      line-height: 1;
+    }
+
+    .subtask-item:hover .subtask-drag-handle {
+      color: rgba(255, 255, 255, 0.3);
+    }
+
+    .subtask-drag-handle:active {
+      cursor: grabbing;
+    }
+
+    .subtask-item.dragging {
+      opacity: 0.3;
+    }
+
+    .subtask-item.subtask-drag-over {
+      border: 1px dashed var(--neon-purple);
+      background: rgba(168, 85, 247, 0.06);
     }
 
     .subtask-add-row {
@@ -1058,7 +1196,8 @@
     let todos = JSON.parse(localStorage.getItem('geek-todos') || '[]');
     todos = todos.map(t => ({
       ...t,
-      subtasks: t.subtasks || []
+      subtasks: t.subtasks || [],
+      collapsed: t.collapsed || false
     }));
     let currentFilter = 'all';
 
@@ -1248,10 +1387,11 @@
               </div>`;
 
           const subtasksHtml = subtaskCount > 0 ? `
-            <div class="subtask-section">
+            <div class="subtask-section ${t.collapsed ? 'collapsed' : ''}">
               <ul class="subtask-list">
                 ${t.subtasks.map(s => `
-                  <li class="subtask-item ${s.done ? 'done' : ''}" data-todo-id="${t.id}" data-id="${s.id}">
+                  <li class="subtask-item ${s.done ? 'done' : ''}" data-todo-id="${t.id}" data-id="${s.id}" draggable="true">
+                    <span class="subtask-drag-handle" title="拖拽排序">⋮⋮</span>
                     <div class="subtask-checkbox" data-action="toggle-sub" data-todo-id="${t.id}" data-sub-id="${s.id}">
                       <svg viewBox="0 0 16 16"><polyline points="2 8 6 12 14 4" /></svg>
                     </div>
@@ -1275,13 +1415,17 @@
           `;
 
           return `
-            <li class="todo-item ${t.done ? 'done' : ''}" data-id="${t.id}">
+            <li class="todo-item ${t.done ? 'done' : ''}" data-id="${t.id}" draggable="true">
               <div class="todo-main">
+                <span class="drag-handle" title="拖拽排序">⋮⋮</span>
                 <div class="checkbox" data-action="toggle">
                   <svg viewBox="0 0 16 16"><polyline points="2 8 6 12 14 4" /></svg>
                 </div>
+                ${subtaskCount > 0 ? `<button class="collapse-toggle" data-action="toggle-collapse" data-id="${t.id}" title="${t.collapsed ? '展开子任务' : '折叠子任务'}">
+                  <svg class="collapse-chevron ${t.collapsed ? 'collapsed' : ''}" viewBox="0 0 12 12"><polyline points="2,3 6,8 10,3" /></svg>
+                </button>` : ''}
                 <div class="todo-body">
-                  <div class="todo-text">${escapeHtml(t.text)}</div>
+                  <div class="todo-text">${t.collapsed && subtaskCount > 0 ? `<span class="progress-badge">${doneCount}/${subtaskCount}</span>` : ''}${escapeHtml(t.text)}</div>
                   ${subtasksHtml}
                 </div>
                 <div class="todo-actions">
@@ -1342,6 +1486,126 @@
       });
     }
 
+    // 拖拽排序
+    let draggedId = null;       // 父任务拖拽
+    let draggedSub = null;      // 子任务拖拽 { todoId, subId }
+
+    list.addEventListener('dragstart', (e) => {
+      // 先检查子任务拖拽
+      const subItem = e.target.closest('.subtask-item');
+      if (subItem) {
+        if (e.target.closest('[data-action], input, button')) {
+          e.preventDefault();
+          return;
+        }
+        draggedSub = { todoId: subItem.dataset.todoId, subId: subItem.dataset.id };
+        subItem.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', subItem.dataset.id);
+        return;
+      }
+
+      // 父任务拖拽
+      const todoItem = e.target.closest('.todo-item');
+      if (!todoItem) return;
+      if (e.target.closest('[data-action], input, button, .todo-text.editing')) {
+        e.preventDefault();
+        return;
+      }
+      draggedId = todoItem.dataset.id;
+      todoItem.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', draggedId);
+    });
+
+    list.addEventListener('dragend', (e) => {
+      const todoItem = e.target.closest('.todo-item');
+      const subItem = e.target.closest('.subtask-item');
+      if (todoItem) todoItem.classList.remove('dragging');
+      if (subItem) subItem.classList.remove('dragging');
+      draggedId = null;
+      draggedSub = null;
+      document.querySelectorAll('.drag-over, .subtask-drag-over').forEach(el => {
+        el.classList.remove('drag-over', 'subtask-drag-over');
+      });
+    });
+
+    list.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+
+      // 清除所有高亮
+      document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+      document.querySelectorAll('.subtask-drag-over').forEach(el => el.classList.remove('subtask-drag-over'));
+
+      if (draggedSub) {
+        const subTarget = e.target.closest('.subtask-item');
+        if (subTarget && subTarget.dataset.id !== draggedSub.subId) {
+          subTarget.classList.add('subtask-drag-over');
+        }
+      } else if (draggedId) {
+        const todoTarget = e.target.closest('.todo-item');
+        if (todoTarget && todoTarget.dataset.id !== draggedId) {
+          todoTarget.classList.add('drag-over');
+        }
+      }
+    });
+
+    list.addEventListener('dragleave', (e) => {
+      const todoItem = e.target.closest('.todo-item');
+      const subItem = e.target.closest('.subtask-item');
+      if (todoItem && !todoItem.contains(e.relatedTarget)) {
+        todoItem.classList.remove('drag-over');
+      }
+      if (subItem && !subItem.contains(e.relatedTarget)) {
+        subItem.classList.remove('subtask-drag-over');
+      }
+    });
+
+    list.addEventListener('drop', (e) => {
+      e.preventDefault();
+
+      // 子任务排序
+      if (draggedSub) {
+        const subTarget = e.target.closest('.subtask-item');
+        if (!subTarget) return;
+        const targetSubId = subTarget.dataset.id;
+        if (targetSubId === draggedSub.subId) return;
+
+        const t = todos.find(t => t.id === draggedSub.todoId);
+        if (!t) return;
+
+        const fromIndex = t.subtasks.findIndex(s => s.id === draggedSub.subId);
+        const toIndex = t.subtasks.findIndex(s => s.id === targetSubId);
+        if (fromIndex === -1 || toIndex === -1) return;
+
+        const [moved] = t.subtasks.splice(fromIndex, 1);
+        t.subtasks.splice(toIndex, 0, moved);
+
+        save();
+        render();
+        return;
+      }
+
+      // 父任务排序
+      if (!draggedId) return;
+      const targetItem = e.target.closest('.todo-item');
+      if (!targetItem) return;
+
+      const targetId = targetItem.dataset.id;
+      if (targetId === draggedId) return;
+
+      const fromIndex = todos.findIndex(t => t.id === draggedId);
+      const toIndex = todos.findIndex(t => t.id === targetId);
+      if (fromIndex === -1 || toIndex === -1) return;
+
+      const [moved] = todos.splice(fromIndex, 1);
+      todos.splice(toIndex, 0, moved);
+
+      save();
+      render();
+    });
+
     // 主列表点击
     list.addEventListener('click', (e) => {
       const item = e.target.closest('.todo-item');
@@ -1383,6 +1647,14 @@
       } else if (action === 'start-edit') {
         e.stopPropagation();
         startEditTitle(actionEl.dataset.id);
+      } else if (action === 'toggle-collapse') {
+        e.stopPropagation();
+        const t = todos.find(t => t.id === actionEl.dataset.id);
+        if (t) {
+          t.collapsed = !t.collapsed;
+          save();
+          render();
+        }
       }
     });
 
