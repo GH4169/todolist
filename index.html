@@ -911,34 +911,78 @@
     }
 
     /* 统计 */
-    .stat-row {
+    .stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .stat-box {
       display: flex;
-      justify-content: space-between;
+      flex-direction: column;
       align-items: center;
-      padding: 8px 0;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      gap: 2px;
+      padding: 10px 6px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 12px;
+      transition: all 0.3s;
     }
 
-    .stat-row:last-child {
-      border-bottom: none;
+    .stat-box:hover {
+      border-color: rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.04);
     }
 
-    .stat-label {
-      font-size: 0.82rem;
+    .stat-box-num {
+      font-size: 1.3rem;
+      font-weight: 800;
+      line-height: 1.2;
+    }
+
+    .stat-box-num.blue { color: var(--neon-blue); }
+    .stat-box-num.green { color: var(--neon-green); }
+    .stat-box-num.pink { color: var(--neon-pink); }
+    .stat-box-num.orange { color: var(--neon-orange); }
+
+    .stat-box-label {
+      font-size: 0.7rem;
       color: var(--text-dim);
+      font-weight: 600;
+      letter-spacing: 0.03em;
     }
 
-    .stat-value {
-      font-size: 0.85rem;
+    .stat-bar-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .stat-bar-bg {
+      flex: 1;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .stat-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--neon-blue), var(--neon-purple));
+      border-radius: 3px;
+      transition: width 0.5s ease;
+    }
+
+    .stat-bar-text {
+      font-size: 0.75rem;
       font-weight: 700;
+      color: var(--neon-blue);
+      min-width: 32px;
+      text-align: right;
     }
 
-    .stat-value.blue { color: var(--neon-blue); }
-    .stat-value.green { color: var(--neon-green); }
-    .stat-value.pink { color: var(--neon-pink); }
-    .stat-value.orange { color: var(--neon-orange); }
-
-    /* 键盘快捷键 */
+    /* 激励语 */
     .shortcut-list {
       list-style: none;
     }
@@ -1060,6 +1104,232 @@
       .action-btn { opacity: 1; }
       .subtask-delete { opacity: 1; }
     }
+
+    /* ==================== 主题系统 ==================== */
+
+    /* 极简暗黑 - 无网格无光晕，低对比度 */
+    body.theme-midnight {
+      --neon-blue: #6bb8ff;
+      --neon-purple: #9b7fea;
+      --neon-pink: #d487a8;
+      --neon-green: #6bcb77;
+      --neon-orange: #d4915a;
+      --bg-dark: #0f0f1a;
+      --card-bg: rgba(255, 255, 255, 0.02);
+      --card-border: rgba(255, 255, 255, 0.05);
+      --text: #cbd5e1;
+      --text-dim: #475569;
+    }
+    body.theme-midnight .bg-grid,
+    body.theme-midnight .bg-glow { display: none; }
+    body.theme-midnight .todo-item,
+    body.theme-midnight .datetime-widget,
+    body.theme-midnight .side-card { backdrop-filter: none; }
+    body.theme-midnight .todo-item:hover { transform: none; box-shadow: none; }
+    body.theme-midnight .todo-item:hover::before { opacity: 0; }
+    body.theme-midnight .checkbox:hover { box-shadow: none; border-color: rgba(255,255,255,0.25); }
+    body.theme-midnight .checkbox { border-color: rgba(255,255,255,0.15); }
+    body.theme-midnight .subtask-checkbox { border-color: rgba(255,255,255,0.12); }
+    body.theme-midnight .subtask-checkbox:hover { box-shadow: none; border-color: rgba(255,255,255,0.25); }
+    body.theme-midnight .subtask-item:hover { background: transparent; }
+    body.theme-midnight .add-btn,
+    body.theme-midnight .sub-add-action,
+    body.theme-midnight .edit-btn,
+    body.theme-midnight .filter-btn,
+    body.theme-midnight .action-btn { box-shadow: none !important; }
+    body.theme-midnight .add-btn:hover { box-shadow: none !important; }
+    body.theme-midnight .todo-input:focus { box-shadow: none; border-color: rgba(255,255,255,0.15); }
+    body.theme-midnight .todo-input { background: rgba(255,255,255,0.03); border-color: rgba(255,255,255,0.08); }
+    body.theme-midnight .progress-ring-circle { stroke: var(--neon-blue); }
+    body.theme-midnight .datetime-widget { border-color: rgba(255,255,255,0.06); background: rgba(255,255,255,0.02); }
+    body.theme-midnight .side-card { border-color: rgba(255,255,255,0.06); background: rgba(255,255,255,0.02); }
+    body.theme-midnight .stat-row { border-color: rgba(255,255,255,0.04); }
+    body.theme-midnight .progress-badge { background: rgba(107, 184, 255, 0.1); border-color: rgba(107, 184, 255, 0.2); }
+    body.theme-midnight .subtask-progress-bar { background: rgba(255,255,255,0.06); }
+
+    /* 清新浅色 */
+    body.theme-light {
+      --neon-blue: #3b82f6;
+      --neon-purple: #7c3aed;
+      --neon-pink: #db2777;
+      --neon-green: #16a34a;
+      --neon-orange: #ea580c;
+      --bg-dark: #f1f5f9;
+      --card-bg: rgba(255, 255, 255, 0.85);
+      --card-border: rgba(0, 0, 0, 0.08);
+      --text: #1e293b;
+      --text-dim: #94a3b8;
+    }
+    body.theme-light .bg-grid,
+    body.theme-light .bg-glow { display: none; }
+    body.theme-light .todo-item,
+    body.theme-light .datetime-widget,
+    body.theme-light .side-card { backdrop-filter: none; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+    body.theme-light .todo-item { border-color: rgba(0,0,0,0.08); }
+    body.theme-light .todo-item:hover { transform: none; box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-color: rgba(59,130,246,0.3); }
+    body.theme-light .todo-item:hover::before { opacity: 1; }
+    body.theme-light .todo-item::before { background: linear-gradient(180deg, var(--neon-blue), var(--neon-purple)); opacity: 0.5; }
+    body.theme-light .todo-item.done::before { background: linear-gradient(180deg, var(--neon-green), var(--neon-blue)); }
+    body.theme-light .checkbox { border-color: rgba(0,0,0,0.2); }
+    body.theme-light .checkbox:hover { box-shadow: 0 0 8px rgba(59,130,246,0.15); border-color: var(--neon-blue); }
+    body.theme-light .subtask-checkbox { border-color: rgba(0,0,0,0.18); }
+    body.theme-light .subtask-checkbox:hover { box-shadow: 0 0 6px rgba(22,163,74,0.15); border-color: var(--neon-green); }
+    body.theme-light .subtask-item:hover { background: rgba(0,0,0,0.02); }
+    body.theme-light .add-btn { box-shadow: none; background: var(--neon-blue); color: #fff; }
+    body.theme-light .add-btn:hover { box-shadow: 0 2px 10px rgba(59,130,246,0.3); }
+    body.theme-light .todo-input { background: rgba(255,255,255,0.8); border-color: rgba(0,0,0,0.1); color: var(--text); }
+    body.theme-light .todo-input:focus { box-shadow: 0 0 0 3px rgba(59,130,246,0.15); border-color: var(--neon-blue); }
+    body.theme-light .todo-input::placeholder { color: #94a3b8; }
+    body.theme-light .progress-ring-track { stroke: rgba(0,0,0,0.06); }
+    body.theme-light .progress-ring-circle { stroke: var(--neon-blue); }
+    body.theme-light .datetime-widget { border-color: rgba(0,0,0,0.08); background: rgba(255,255,255,0.7); }
+    body.theme-light .side-card { border-color: rgba(0,0,0,0.08); background: rgba(255,255,255,0.7); }
+    body.theme-light .stat-row { border-color: rgba(0,0,0,0.06); }
+    body.theme-light .progress-badge { background: rgba(124,58,237,0.1); border-color: rgba(124,58,237,0.2); color: var(--neon-purple); }
+    body.theme-light .subtask-progress-bar { background: rgba(0,0,0,0.06); }
+    body.theme-light .filter-btn { color: var(--text-dim); border-color: rgba(0,0,0,0.08); }
+    body.theme-light .filter-btn.active { background: var(--neon-blue); color: #fff; border-color: var(--neon-blue); }
+    body.theme-light .clear-btn { color: var(--text-dim); }
+    body.theme-light .clear-btn:hover { color: #ef4444; }
+    body.theme-light kbd { background: rgba(0,0,0,0.05); border-color: rgba(0,0,0,0.1); color: var(--text-dim); }
+    body.theme-light .quote-text { color: var(--text-dim); }
+    body.theme-light .todo-text.editing { background: rgba(59,130,246,0.05); }
+
+    /* 暖色调 - 琥珀金 */
+    body.theme-warm {
+      --neon-blue: #f59e0b;
+      --neon-purple: #d97706;
+      --neon-pink: #ef4444;
+      --neon-green: #22c55e;
+      --neon-orange: #f97316;
+      --bg-dark: #1a1410;
+      --card-bg: rgba(255, 255, 255, 0.03);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --text: #e7e5e4;
+      --text-dim: #78716c;
+    }
+    body.theme-warm .bg-grid {
+      background-image:
+        linear-gradient(rgba(245, 158, 11, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(245, 158, 11, 0.03) 1px, transparent 1px);
+    }
+    body.theme-warm .bg-glow.glow-1 { background: var(--neon-orange); }
+    body.theme-warm .bg-glow.glow-2 { background: var(--neon-purple); }
+    body.theme-warm .progress-badge { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.25); }
+    body.theme-warm .todo-item.done::before { background: linear-gradient(180deg, var(--neon-green), var(--neon-orange)); }
+    body.theme-warm .todo-text.editing { background: rgba(245, 158, 11, 0.05); outline-color: var(--neon-orange); box-shadow: 0 0 15px rgba(245, 158, 11, 0.1); }
+
+    /* 森系 - 翡翠绿 */
+    body.theme-forest {
+      --neon-blue: #34d399;
+      --neon-purple: #a78bfa;
+      --neon-pink: #f472b6;
+      --neon-green: #4ade80;
+      --neon-orange: #fb923c;
+      --bg-dark: #0a1a15;
+      --card-bg: rgba(255, 255, 255, 0.03);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --text: #d1fae5;
+      --text-dim: #6ee7b7;
+    }
+    body.theme-forest .bg-grid {
+      background-image:
+        linear-gradient(rgba(52, 211, 153, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(52, 211, 153, 0.03) 1px, transparent 1px);
+    }
+    body.theme-forest .bg-glow.glow-1 { background: var(--neon-green); }
+    body.theme-forest .bg-glow.glow-2 { background: var(--neon-purple); }
+    body.theme-forest .progress-badge { background: rgba(52, 211, 153, 0.12); border-color: rgba(52, 211, 153, 0.25); }
+    body.theme-forest .todo-item.done::before { background: linear-gradient(180deg, var(--neon-green), var(--neon-blue)); }
+    body.theme-forest .todo-text.editing { background: rgba(52, 211, 153, 0.05); outline-color: var(--neon-green); box-shadow: 0 0 15px rgba(52, 211, 153, 0.1); }
+
+    /* 海洋 - 深蓝 */
+    body.theme-ocean {
+      --neon-blue: #38bdf8;
+      --neon-purple: #818cf8;
+      --neon-pink: #f472b6;
+      --neon-green: #2dd4bf;
+      --neon-orange: #fb923c;
+      --bg-dark: #0a1628;
+      --card-bg: rgba(255, 255, 255, 0.03);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --text: #e0f2fe;
+      --text-dim: #7dd3fc;
+    }
+    body.theme-ocean .bg-grid {
+      background-image:
+        linear-gradient(rgba(56, 189, 248, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(56, 189, 248, 0.03) 1px, transparent 1px);
+    }
+    body.theme-ocean .bg-glow.glow-1 { background: var(--neon-blue); }
+    body.theme-ocean .bg-glow.glow-2 { background: var(--neon-purple); }
+    body.theme-ocean .progress-badge { background: rgba(56, 189, 248, 0.12); border-color: rgba(56, 189, 248, 0.25); }
+    body.theme-ocean .todo-item.done::before { background: linear-gradient(180deg, var(--neon-green), var(--neon-blue)); }
+    body.theme-ocean .todo-text.editing { background: rgba(56, 189, 248, 0.05); outline-color: var(--neon-blue); box-shadow: 0 0 15px rgba(56, 189, 248, 0.1); }
+
+    /* ==================== 主题切换器 ==================== */
+    .theme-switcher-card {
+      cursor: default;
+    }
+    .theme-options {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .theme-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 4px;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      background: rgba(255,255,255,0.03);
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: all 0.3s;
+      flex: 1;
+      min-width: 50px;
+    }
+    .theme-btn:hover {
+      border-color: rgba(255,255,255,0.2);
+      background: rgba(255,255,255,0.06);
+    }
+    .theme-btn.active {
+      border-color: var(--neon-blue);
+      background: rgba(0, 212, 255, 0.08);
+      color: var(--text);
+      box-shadow: 0 0 12px rgba(0, 212, 255, 0.15);
+    }
+    .theme-swatch {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.1);
+    }
+    .theme-swatch.swatch-cyber {
+      background: linear-gradient(135deg, #0a0a1a, #00d4ff, #a855f7);
+    }
+    .theme-swatch.swatch-midnight {
+      background: linear-gradient(135deg, #0f0f1a, #6bb8ff);
+    }
+    .theme-swatch.swatch-light {
+      background: linear-gradient(135deg, #f1f5f9, #3b82f6, #7c3aed);
+    }
+    .theme-swatch.swatch-warm {
+      background: linear-gradient(135deg, #1a1410, #f59e0b, #ef4444);
+    }
+    .theme-swatch.swatch-forest {
+      background: linear-gradient(135deg, #0a1a15, #34d399, #4ade80);
+    }
+    .theme-swatch.swatch-ocean {
+      background: linear-gradient(135deg, #0a1628, #38bdf8, #818cf8);
+    }
+    .theme-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
   </style>
 </head>
 <body>
@@ -1135,52 +1405,64 @@
           <div class="datetime-weekday" id="weekdayDisplay"></div>
         </div>
 
-        <!-- 统计 -->
-        <div class="side-card">
-          <div class="side-card-title">📊 统计</div>
-          <div class="stat-row">
-            <span class="stat-label">全部任务</span>
-            <span class="stat-value blue" id="statTotal">0</span>
-          </div>
-          <div class="stat-row">
-            <span class="stat-label">进行中</span>
-            <span class="stat-value orange" id="statActive">0</span>
-          </div>
-          <div class="stat-row">
-            <span class="stat-label">已完成</span>
-            <span class="stat-value green" id="statDone">0</span>
-          </div>
-          <div class="stat-row">
-            <span class="stat-label">子任务</span>
-            <span class="stat-value pink" id="statSubs">0</span>
+        <!-- 主题切换 -->
+        <div class="side-card theme-switcher-card">
+          <div class="side-card-title">🎨 主题</div>
+          <div class="theme-options">
+            <button class="theme-btn active" data-theme="cyber" title="赛博朋克">
+              <span class="theme-swatch swatch-cyber"></span>
+              <span class="theme-label">赛博</span>
+            </button>
+            <button class="theme-btn" data-theme="midnight" title="极简暗黑">
+              <span class="theme-swatch swatch-midnight"></span>
+              <span class="theme-label">暗黑</span>
+            </button>
+            <button class="theme-btn" data-theme="light" title="清新浅色">
+              <span class="theme-swatch swatch-light"></span>
+              <span class="theme-label">浅色</span>
+            </button>
+            <button class="theme-btn" data-theme="warm" title="暖色调">
+              <span class="theme-swatch swatch-warm"></span>
+              <span class="theme-label">暖色</span>
+            </button>
+            <button class="theme-btn" data-theme="forest" title="翡翠森林">
+              <span class="theme-swatch swatch-forest"></span>
+              <span class="theme-label">森系</span>
+            </button>
+            <button class="theme-btn" data-theme="ocean" title="深海海洋">
+              <span class="theme-swatch swatch-ocean"></span>
+              <span class="theme-label">海洋</span>
+            </button>
           </div>
         </div>
 
-        <!-- 快捷键 -->
+        <!-- 统计 -->
         <div class="side-card">
-          <div class="side-card-title">⌨️ 快捷键</div>
-          <ul class="shortcut-list">
-            <li>
-              <span class="label">添加任务</span>
-              <kbd>Enter</kbd>
-            </li>
-            <li>
-              <span class="label">切换完成</span>
-              <kbd>点击</kbd>
-            </li>
-            <li>
-              <span class="label">添加子任务</span>
-              <kbd>悬停</kbd>
-            </li>
-            <li>
-              <span class="label">确认子任务</span>
-              <kbd>Enter</kbd>
-            </li>
-            <li>
-              <span class="label">编辑任务标题</span>
-              <kbd>双击</kbd>
-            </li>
-          </ul>
+          <div class="side-card-title">📊 统计</div>
+          <div class="stat-grid">
+            <div class="stat-box">
+              <span class="stat-box-num blue" id="statTotal">0</span>
+              <span class="stat-box-label">总任务</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-box-num green" id="statDone">0</span>
+              <span class="stat-box-label">已完成</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-box-num orange" id="statActive">0</span>
+              <span class="stat-box-label">进行中</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-box-num pink" id="statSubs">0</span>
+              <span class="stat-box-label">子任务</span>
+            </div>
+          </div>
+          <div class="stat-bar-wrap">
+            <div class="stat-bar-bg">
+              <div class="stat-bar-fill" id="statBarFill" style="width: 0%"></div>
+            </div>
+            <span class="stat-bar-text" id="statBarText">0%</span>
+          </div>
         </div>
 
         <!-- 激励语 -->
@@ -1200,6 +1482,31 @@
       collapsed: t.collapsed || false
     }));
     let currentFilter = 'all';
+
+    // 主题管理
+    const THEME_KEY = 'geek-todos-theme';
+    const THEME_MAP = { cyber: '', midnight: 'theme-midnight', light: 'theme-light', warm: 'theme-warm', forest: 'theme-forest', ocean: 'theme-ocean' };
+
+    function applyTheme(themeName) {
+      document.body.className = document.body.className.replace(/theme-\w+/g, '').trim();
+      const cls = THEME_MAP[themeName];
+      if (cls) document.body.classList.add(cls);
+      localStorage.setItem(THEME_KEY, themeName);
+      // 更新按钮状态
+      document.querySelectorAll('.theme-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.theme === themeName);
+      });
+    }
+
+    function initTheme() {
+      const saved = localStorage.getItem(THEME_KEY) || 'cyber';
+      applyTheme(saved);
+    }
+
+    // 主题按钮事件
+    document.querySelectorAll('.theme-btn').forEach(btn => {
+      btn.addEventListener('click', () => applyTheme(btn.dataset.theme));
+    });
 
     const input = document.getElementById('todoInput');
     const addBtn = document.getElementById('addBtn');
@@ -1347,6 +1654,13 @@
       document.getElementById('statActive').textContent = active;
       document.getElementById('statDone').textContent = done;
       document.getElementById('statSubs').textContent = subs;
+
+      // 进度条
+      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+      const fill = document.getElementById('statBarFill');
+      const text = document.getElementById('statBarText');
+      if (fill) fill.style.width = pct + '%';
+      if (text) text.textContent = pct + '%';
     }
 
     function escapeHtml(str) {
@@ -1736,6 +2050,7 @@
     setDailyQuote();
     updateDateTime();
     setInterval(updateDateTime, 1000);
+    initTheme();
     render();
   </script>
 </body>
