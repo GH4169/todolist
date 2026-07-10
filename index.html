@@ -665,6 +665,22 @@
       cursor: text;
     }
 
+    .task-time {
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      margin-top: 3px;
+      opacity: 0.7;
+      letter-spacing: 0.01em;
+    }
+
+    .subtask-time {
+      font-size: 0.65rem;
+      color: var(--text-dim);
+      opacity: 0.6;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+
     .subtask-delete {
       width: 24px;
       height: 24px;
@@ -1492,7 +1508,9 @@
     todos = todos.map(t => ({
       ...t,
       subtasks: t.subtasks || [],
-      collapsed: t.collapsed || false
+      collapsed: t.collapsed || false,
+      createdAt: t.createdAt || Date.now(),
+      completedAt: t.completedAt || null
     }));
     let currentFilter = 'all';
 
@@ -1557,7 +1575,7 @@
     function addTodo() {
       const text = input.value.trim();
       if (!text) return;
-      todos.unshift({ id: uid(), text, done: false, subtasks: [] });
+      todos.push({ id: uid(), text, done: false, subtasks: [], createdAt: Date.now(), completedAt: null });
       input.value = '';
       input.focus();
       save();
@@ -1568,6 +1586,7 @@
       const t = todos.find(t => t.id === id);
       if (t) {
         t.done = !t.done;
+        t.completedAt = t.done ? Date.now() : null;
         save();
         render();
       }
@@ -1579,12 +1598,15 @@
       const sub = t.subtasks.find(s => s.id === subId);
       if (sub) {
         sub.done = !sub.done;
+        sub.completedAt = sub.done ? Date.now() : null;
         // 双向同步：所有子任务完成 → 父任务完成；有子任务取消 → 父任务取消
         if (t.subtasks.length > 0) {
           if (t.subtasks.every(s => s.done)) {
             t.done = true;
+            t.completedAt = Date.now();
           } else if (t.done) {
             t.done = false;
+            t.completedAt = null;
           }
         }
         save();
@@ -1595,7 +1617,7 @@
     function addSubtask(todoId, text) {
       const t = todos.find(t => t.id === todoId);
       if (t && text.trim()) {
-        t.subtasks.push({ id: uid(), text: text.trim(), done: false });
+        t.subtasks.push({ id: uid(), text: text.trim(), done: false, createdAt: Date.now(), completedAt: null });
         if (t.done) t.done = false;
         save();
         render();
@@ -1676,6 +1698,13 @@
       if (text) text.textContent = pct + '%';
     }
 
+    function formatTime(ts) {
+      if (!ts) return '';
+      const d = new Date(ts);
+      const pad = n => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
     function escapeHtml(str) {
       const div = document.createElement('div');
       div.textContent = str;
@@ -1723,6 +1752,7 @@
                       <svg viewBox="0 0 16 16"><polyline points="2 8 6 12 14 4" /></svg>
                     </div>
                     <span class="subtask-text">${escapeHtml(s.text)}</span>
+                    <span class="subtask-time">${formatTime(s.createdAt)}${s.done && s.completedAt ? ' · ' + formatTime(s.completedAt) : ''}</span>
                     <button class="subtask-delete" data-action="delete-sub" data-todo-id="${t.id}" data-sub-id="${s.id}" title="删除">×</button>
                   </li>
                 `).join('')}
@@ -1753,6 +1783,7 @@
                 </button>` : ''}
                 <div class="todo-body">
                   <div class="todo-text">${t.collapsed && subtaskCount > 0 ? `<span class="progress-badge">${doneCount}/${subtaskCount}</span>` : ''}${escapeHtml(t.text)}</div>
+                  <div class="task-time">创建于 ${formatTime(t.createdAt)}${t.done && t.completedAt ? ' · 完成于 ' + formatTime(t.completedAt) : ''}</div>
                   ${subtasksHtml}
                 </div>
                 <div class="todo-actions">
