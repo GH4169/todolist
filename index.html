@@ -655,6 +655,16 @@
       color: var(--text-dim);
     }
 
+    .subtask-text.editing {
+      outline: 1px solid var(--neon-blue);
+      outline-offset: 1px;
+      border-radius: 4px;
+      background: rgba(0, 212, 255, 0.06);
+      padding: 1px 4px;
+      box-shadow: 0 0 10px rgba(0, 212, 255, 0.08);
+      cursor: text;
+    }
+
     .subtask-delete {
       width: 24px;
       height: 24px;
@@ -1803,6 +1813,46 @@
       });
     }
 
+    // 编辑子任务内容
+    function startEditSubtask(todoId, subId) {
+      const t = todos.find(t => t.id === todoId);
+      if (!t) return;
+      const sub = t.subtasks.find(s => s.id === subId);
+      if (!sub) return;
+      const textEl = document.querySelector(`.subtask-item[data-id="${subId}"] .subtask-text`);
+      if (!textEl) return;
+
+      textEl.contentEditable = 'true';
+      textEl.classList.add('editing');
+      textEl.focus();
+
+      const range = document.createRange();
+      range.selectNodeContents(textEl);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+
+      const finish = () => {
+        const newText = textEl.textContent.trim();
+        if (newText) {
+          sub.text = newText;
+          save();
+        }
+        textEl.contentEditable = 'false';
+        textEl.classList.remove('editing');
+        render();
+      };
+
+      textEl.addEventListener('blur', finish, { once: true });
+      textEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); textEl.blur(); }
+        if (e.key === 'Escape') {
+          textEl.textContent = sub.text;
+          textEl.blur();
+        }
+      });
+    }
+
     // 拖拽排序
     let draggedId = null;       // 父任务拖拽
     let draggedSub = null;      // 子任务拖拽 { todoId, subId }
@@ -1811,7 +1861,7 @@
       // 先检查子任务拖拽
       const subItem = e.target.closest('.subtask-item');
       if (subItem) {
-        if (e.target.closest('[data-action], input, button')) {
+        if (e.target.closest('[data-action], input, button, .subtask-text.editing')) {
           e.preventDefault();
           return;
         }
@@ -1983,6 +2033,15 @@
       if (!item) return;
       e.preventDefault();
       startEditTitle(item.dataset.id);
+    });
+
+    list.addEventListener('dblclick', (e) => {
+      const textEl = e.target.closest('.subtask-text');
+      if (!textEl) return;
+      const subItem = textEl.closest('.subtask-item');
+      if (!subItem) return;
+      e.preventDefault();
+      startEditSubtask(subItem.dataset.todoId, subItem.dataset.id);
     });
 
     list.addEventListener('keydown', (e) => {
