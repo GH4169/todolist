@@ -84,9 +84,10 @@
 
     .app-inner {
       display: flex;
+      flex-direction: row-reverse;
       gap: 24px;
       width: 100%;
-      max-width: 960px;
+      max-width: 1200px;
       padding: 0 24px;
     }
 
@@ -888,6 +889,8 @@
       display: flex;
       flex-direction: column;
       gap: 16px;
+      padding-top: 100px;
+      align-items: stretch;
     }
 
     .side-card {
@@ -896,6 +899,8 @@
       border-radius: 16px;
       padding: 20px;
       backdrop-filter: blur(20px);
+      width: 100%;
+      text-align: left;
     }
 
     .side-card-title {
@@ -909,7 +914,7 @@
 
     /* 日期时间 */
     .datetime-widget {
-      text-align: center;
+      text-align: left;
     }
 
     .datetime-date {

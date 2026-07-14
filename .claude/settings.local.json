@@ -5,7 +5,10 @@
       "Bash(echo \"\\(empty = all removed, exit $?\\)\")",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(git checkout *)",
+      "Bash(python3 *)",
+      "Bash(grep -n \"      </div>\\\\$\" /home/zhourongyi/project/my-todolist/index.html)"
     ]
   }
 }
