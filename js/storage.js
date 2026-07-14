@@ -13,17 +13,21 @@ let todos = [];
 
 /**
  * 从 LocalStorage 读取原始数据并做结构归一化。
- * 确保每条任务都包含 subtasks / collapsed / createdAt / completedAt 字段。
+ * 确保每条任务都包含 subtasks / collapsed / createdAt / completedAt / description 字段。
  */
 function loadTodos() {
   const raw = localStorage.getItem(STORAGE_KEY);
   const parsed = raw ? JSON.parse(raw) : [];
   todos = parsed.map(t => ({
     ...t,
-    subtasks: t.subtasks || [],
+    subtasks: (t.subtasks || []).map(s => ({
+      ...s,
+      description: s.description || '',
+    })),
     collapsed: t.collapsed || false,
     createdAt: t.createdAt || Date.now(),
     completedAt: t.completedAt || null,
+    description: t.description || '',
   }));
 }
 

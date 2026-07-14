@@ -493,7 +493,131 @@ body {
   box-shadow: 0 0 15px rgba(0, 212, 255, 0.2);
 }
 
-/* 子任务区 */
+/* ==================== 任务详情描述 ==================== */
+
+/* 父任务描述按钮 */
+.desc-btn {
+  color: var(--text-dim);
+}
+.desc-btn:hover {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+  border-color: rgba(251, 191, 36, 0.3);
+  box-shadow: 0 0 12px rgba(251, 191, 36, 0.15);
+}
+.desc-btn.has-desc {
+  color: #fbbf24;
+  opacity: 1;
+}
+.desc-btn .desc-icon {
+  display: block;
+}
+
+/* 子任务行包装器（让描述区域独占一行） */
+.subtask-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+/* 子任务描述按钮 */
+.subtask-desc-btn {
+  width: 22px;
+  height: 22px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 0.78rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.2s;
+  opacity: 0.4;
+  border-radius: 4px;
+  padding: 0;
+}
+
+.subtask-item:hover .subtask-desc-btn {
+  opacity: 1;
+}
+
+.subtask-desc-btn:hover {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+}
+
+.subtask-desc-btn.has-desc {
+  color: #fbbf24;
+  opacity: 0.75;
+}
+
+/* 描述区域（父任务 & 子任务通用） */
+.desc-section,
+.subtask-desc-section {
+  margin: 6px 0 2px 38px;
+  padding: 8px 12px;
+  border-left: 2px solid rgba(0, 212, 255, 0.25);
+  background: rgba(255, 255, 255, 0.015);
+  border-radius: 0 8px 8px 0;
+  animation: descSlideIn 0.25s ease-out;
+}
+
+.subtask-desc-section {
+  margin: 4px 0 2px 38px;
+  padding: 6px 10px;
+}
+
+@keyframes descSlideIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* 只读展示 */
+.desc-display {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  line-height: 1.55;
+  word-break: break-word;
+  white-space: pre-wrap;
+  cursor: text;
+  padding: 3px 6px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.desc-display:hover {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.desc-display:empty::before {
+  content: '点击添加描述...';
+  color: rgba(255, 255, 255, 0.15);
+  font-style: italic;
+}
+
+/* 编辑模式 textarea */
+.desc-edit {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 10px;
+  background: rgba(0, 212, 255, 0.04);
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-family: inherit;
+  line-height: 1.55;
+  resize: none;
+  overflow: hidden;
+  outline: none;
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.08);
+}
+
+/* 子任务区改为纵向排列，容纳描述区域 */
 .subtask-section {
   margin-top: 12px;
   padding-left: 38px;
@@ -568,8 +692,8 @@ body {
 
 .subtask-item {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  align-items: stretch;
   padding: 7px 10px;
   border-radius: 10px;
   transition: all 0.2s;
@@ -1170,6 +1294,18 @@ body.theme-midnight .side-card { border-color: rgba(255,255,255,0.06); backgroun
 body.theme-midnight .stat-row { border-color: rgba(255,255,255,0.04); }
 body.theme-midnight .progress-badge { background: rgba(107, 184, 255, 0.1); border-color: rgba(107, 184, 255, 0.2); }
 body.theme-midnight .subtask-progress-bar { background: rgba(255,255,255,0.06); }
+body.theme-midnight .desc-section,
+body.theme-midnight .subtask-desc-section {
+  background: rgba(255, 255, 255, 0.01);
+  border-left-color: rgba(255, 255, 255, 0.06);
+}
+body.theme-midnight .desc-display:empty::before {
+  color: rgba(255, 255, 255, 0.12);
+}
+body.theme-midnight .desc-edit {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.08);
+}
 
 /* 清新浅色 */
 body.theme-light {
@@ -1223,6 +1359,18 @@ body.theme-light .collapse-toggle:hover { color: rgba(0,0,0,0.5); background: rg
 body.theme-light .progress-badge { background: rgba(124,58,237,0.08); border-color: rgba(124,58,237,0.2); }
 body.theme-light .progress-ring .bg { stroke: rgba(0, 0, 0, 0.1); }
 body.theme-light .progress-ring .fill { stroke: var(--neon-blue); }
+body.theme-light .desc-section,
+body.theme-light .subtask-desc-section {
+  background: rgba(0, 0, 0, 0.02);
+  border-left-color: rgba(0, 0, 0, 0.1);
+}
+body.theme-light .desc-display:empty::before {
+  color: rgba(0, 0, 0, 0.18);
+}
+body.theme-light .desc-edit {
+  background: rgba(59, 130, 246, 0.04);
+  border-color: rgba(59, 130, 246, 0.25);
+}
 
 /* 暖色调 - 琥珀金 */
 body.theme-warm {

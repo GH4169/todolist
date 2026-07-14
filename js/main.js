@@ -17,6 +17,9 @@ const filterBtns = document.querySelectorAll('.filter-btn');
 const circumference = 2 * Math.PI * 60;
 let currentFilter = 'all';
 
+// 记录展开的描述区域 key: "todoId" 或 "todoId:subId"
+const openDescriptions = new Set();
+
 // ---- 激励语池 ----
 const quotes = [
   'Stay hungry, stay foolish.',
@@ -50,6 +53,7 @@ function addTodo() {
     subtasks: [],
     createdAt: Date.now(),
     completedAt: null,
+    description: '',
   });
   input.value = '';
   input.focus();
@@ -98,6 +102,7 @@ function addSubtask(todoId, text) {
       done: false,
       createdAt: Date.now(),
       completedAt: null,
+      description: '',
     });
     if (t.done) t.done = false;
     saveTodos();
@@ -136,6 +141,80 @@ function clearCompleted() {
   todos = todos.filter(t => !t.done);
   saveTodos();
   render();
+}
+
+// ============================================================
+// 任务详情描述
+// ============================================================
+
+function toggleDescription(todoId, subId) {
+  const key = subId ? `${todoId}:${subId}` : todoId;
+  if (openDescriptions.has(key)) {
+    openDescriptions.delete(key);
+  } else {
+    openDescriptions.add(key);
+  }
+  render();
+}
+
+function autoResizeTextarea(el) {
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
+}
+
+function startEditDescription(todoId, subId) {
+  const t = todos.find(t => t.id === todoId);
+  if (!t) return;
+
+  const containerSelector = subId
+    ? `.subtask-desc-section[data-sub-id="${subId}"]`
+    : `.desc-section[data-id="${todoId}"]`;
+  const container = document.querySelector(containerSelector);
+  if (!container) return;
+
+  const displayEl = container.querySelector('.desc-display');
+  if (!displayEl) return;
+
+  const currentDesc = subId
+    ? (t.subtasks.find(s => s.id === subId)?.description || '')
+    : (t.description || '');
+
+  const textarea = document.createElement('textarea');
+  textarea.className = 'desc-edit';
+  textarea.value = currentDesc;
+  textarea.rows = 2;
+
+  let saved = false;
+
+  const save = () => {
+    if (saved) return;
+    saved = true;
+    const newDesc = textarea.value.trim();
+    const key = subId ? `${todoId}:${subId}` : todoId;
+    if (subId) {
+      const sub = t.subtasks.find(s => s.id === subId);
+      if (sub) sub.description = newDesc;
+    } else {
+      t.description = newDesc;
+    }
+    // 清空描述时同时收起，避免渲染空框
+    if (!newDesc) openDescriptions.delete(key);
+    saveTodos();
+    render();
+  };
+
+  textarea.addEventListener('blur', save);
+  textarea.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      saved = true; // 阻止 blur 保存
+      render(); // 重新渲染恢复原始内容
+    }
+  });
+  textarea.addEventListener('input', () => autoResizeTextarea(textarea));
+
+  displayEl.replaceWith(textarea);
+  textarea.focus();
+  requestAnimationFrame(() => autoResizeTextarea(textarea));
 }
 
 // ============================================================
@@ -240,13 +319,24 @@ function render() {
           <ul class="subtask-list">
             ${t.subtasks.map(s => `
               <li class="subtask-item ${s.done ? 'done' : ''}" data-todo-id="${t.id}" data-id="${s.id}" draggable="true">
-                <span class="subtask-drag-handle" title="拖拽排序">⋮⋮</span>
-                <div class="subtask-checkbox" data-action="toggle-sub" data-todo-id="${t.id}" data-sub-id="${s.id}">
-                  <svg viewBox="0 0 16 16"><polyline points="2 8 6 12 14 4" /></svg>
+                <div class="subtask-main">
+                  <span class="subtask-drag-handle" title="拖拽排序">⋮⋮</span>
+                  <div class="subtask-checkbox" data-action="toggle-sub" data-todo-id="${t.id}" data-sub-id="${s.id}">
+                    <svg viewBox="0 0 16 16"><polyline points="2 8 6 12 14 4" /></svg>
+                  </div>
+                  <span class="subtask-text">${escapeHtml(s.text)}</span>
+                  <button class="subtask-desc-btn ${s.description ? 'has-desc' : ''}" data-action="toggle-desc" data-todo-id="${t.id}" data-sub-id="${s.id}" title="详情描述">
+                    <svg class="desc-icon" viewBox="0 0 16 16" width="12" height="12" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v7a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 11.5v-7z"/>
+                      <path d="M5.5 6.5h5M5.5 9h3.5"/>
+                    </svg>
+                  </button>
+                  <span class="subtask-time">${formatTime(s.createdAt)}${s.done && s.completedAt ? ' · ' + formatTime(s.completedAt) : ''}</span>
+                  <button class="subtask-delete" data-action="delete-sub" data-todo-id="${t.id}" data-sub-id="${s.id}" title="删除">×</button>
                 </div>
-                <span class="subtask-text">${escapeHtml(s.text)}</span>
-                <span class="subtask-time">${formatTime(s.createdAt)}${s.done && s.completedAt ? ' · ' + formatTime(s.completedAt) : ''}</span>
-                <button class="subtask-delete" data-action="delete-sub" data-todo-id="${t.id}" data-sub-id="${s.id}" title="删除">×</button>
+                ${s.description || openDescriptions.has(t.id + ':' + s.id) ? `<div class="subtask-desc-section" data-todo-id="${t.id}" data-sub-id="${s.id}" style="display: ${openDescriptions.has(t.id + ':' + s.id) ? 'block' : 'none'};">
+                  <div class="desc-display">${s.description ? escapeHtml(s.description) : ''}</div>
+                </div>` : ''}
               </li>
             `).join('')}
           </ul>
@@ -277,11 +367,20 @@ function render() {
             <div class="todo-body">
               <div class="todo-text">${t.collapsed && subtaskCount > 0 ? `<span class="progress-badge">${doneCount}/${subtaskCount}</span>` : ''}${escapeHtml(t.text)}</div>
               <div class="task-time">创建于 ${formatTime(t.createdAt)}${t.done && t.completedAt ? ' · 完成于 ' + formatTime(t.completedAt) : ''}</div>
+              ${t.description || openDescriptions.has(t.id) ? `<div class="desc-section" data-id="${t.id}" style="display: ${openDescriptions.has(t.id) ? 'block' : 'none'};">
+                <div class="desc-display">${t.description ? escapeHtml(t.description) : ''}</div>
+              </div>` : ''}
               ${subtasksHtml}
             </div>
             <div class="todo-actions">
               <button class="action-btn sub-add-action" data-action="show-sub-add" data-todo-id="${t.id}" title="添加子任务">+</button>
               <button class="action-btn edit-btn" data-action="start-edit" data-id="${t.id}" title="编辑标题">✎</button>
+              <button class="action-btn desc-btn ${t.description ? 'has-desc' : ''}" data-action="toggle-desc" data-id="${t.id}" title="详情描述">
+                <svg class="desc-icon" viewBox="0 0 16 16" width="14" height="14" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v7a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 11.5v-7z"/>
+                  <path d="M5.5 6.5h5M5.5 9h3.5"/>
+                </svg>
+              </button>
               <button class="action-btn" data-action="delete" data-id="${t.id}" title="删除">✕</button>
             </div>
           </div>
@@ -390,7 +489,7 @@ list.addEventListener('dragstart', (e) => {
   // 优先检查子任务拖拽
   const subItem = e.target.closest('.subtask-item');
   if (subItem) {
-    if (e.target.closest('[data-action], input, button, .subtask-text.editing')) {
+    if (e.target.closest('[data-action], input, button, .subtask-text.editing, .desc-display, .desc-edit')) {
       e.preventDefault();
       return;
     }
@@ -404,7 +503,7 @@ list.addEventListener('dragstart', (e) => {
   // 父任务拖拽
   const todoItem = e.target.closest('.todo-item');
   if (!todoItem) return;
-  if (e.target.closest('[data-action], input, button, .todo-text.editing')) {
+  if (e.target.closest('[data-action], input, button, .todo-text.editing, .desc-display, .desc-edit')) {
     e.preventDefault();
     return;
   }
@@ -554,6 +653,11 @@ list.addEventListener('click', (e) => {
       saveTodos();
       render();
     }
+  } else if (action === 'toggle-desc') {
+    e.stopPropagation();
+    const todoId = actionEl.dataset.id || actionEl.dataset.todoId;
+    const subId = actionEl.dataset.subId || null;
+    toggleDescription(todoId, subId);
   }
 });
 
@@ -591,6 +695,20 @@ document.addEventListener('click', (e) => {
   if (!e.target.closest('.subtask-add-row')) {
     document.querySelectorAll('.subtask-add-row').forEach(el => { el.style.display = 'none'; });
   }
+});
+
+// 点击描述展示区进入编辑模式
+list.addEventListener('click', (e) => {
+  const descDisplay = e.target.closest('.desc-display');
+  if (!descDisplay) return;
+
+  const descSection = descDisplay.closest('.desc-section, .subtask-desc-section');
+  if (!descSection) return;
+
+  const isSub = descSection.classList.contains('subtask-desc-section');
+  const todoId = isSub ? descSection.dataset.todoId : descSection.dataset.id;
+  const subId = isSub ? descSection.dataset.subId : null;
+  startEditDescription(todoId, subId);
 });
 
 // ============================================================
