@@ -54,9 +54,18 @@
 
         <!-- 过滤 -->
         <div class="filters">
-          <button class="filter-btn active" data-filter="all">📋 全部</button>
-          <button class="filter-btn" data-filter="active">🔥 进行中</button>
-          <button class="filter-btn" data-filter="completed">✅ 已完成</button>
+          <button class="filter-btn active" data-filter="all">
+            <svg class="filter-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h6v6H4z"/><path d="M14 4h6v6h-6z"/><path d="M4 14h6v6H4z"/><circle cx="17" cy="17" r="3"/></svg>
+            <span>全部</span>
+          </button>
+          <button class="filter-btn" data-filter="active">
+            <svg class="filter-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.2-8.6"/><path d="M21 3v6h-6"/></svg>
+            <span>进行中</span>
+          </button>
+          <button class="filter-btn" data-filter="completed">
+            <svg class="filter-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="8 12 11 15 16 9"/></svg>
+            <span>已完成</span>
+          </button>
         </div>
 
         <!-- 任务列表 -->

@@ -250,7 +250,11 @@ body {
 
 .filter-btn {
   flex: 1;
-  padding: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 10px 12px;
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
@@ -259,6 +263,7 @@ body {
   cursor: pointer;
   transition: all 0.3s;
   font-family: inherit;
+  line-height: 1;
 }
 
 .filter-btn:hover {
@@ -271,6 +276,26 @@ body {
   border-color: var(--neon-blue);
   color: var(--neon-blue);
   box-shadow: 0 0 20px rgba(0, 212, 255, 0.1);
+}
+
+.filter-icon {
+  flex-shrink: 0;
+  transition: all 0.3s;
+}
+
+.filter-btn:not(.active) .filter-icon {
+  opacity: 0.5;
+  color: var(--text-dim);
+}
+
+.filter-btn.active .filter-icon {
+  opacity: 1;
+  color: var(--neon-blue);
+}
+
+.filter-btn:hover:not(.active) .filter-icon {
+  opacity: 0.75;
+  color: var(--text);
 }
 
 .todo-list {
@@ -1364,6 +1389,9 @@ body.theme-light .progress-badge { background: rgba(124,58,237,0.1); border-colo
 body.theme-light .subtask-progress-bar { background: rgba(0,0,0,0.06); }
 body.theme-light .filter-btn { color: var(--text-dim); border-color: rgba(0,0,0,0.08); }
 body.theme-light .filter-btn.active { background: var(--neon-blue); color: #fff; border-color: var(--neon-blue); }
+body.theme-light .filter-btn:not(.active) .filter-icon { color: var(--text-dim); opacity: 0.55; }
+body.theme-light .filter-btn.active .filter-icon { color: #fff; opacity: 1; }
+body.theme-light .filter-btn:hover:not(.active) .filter-icon { opacity: 0.8; color: var(--text); }
 body.theme-light .clear-btn { color: var(--text-dim); }
 body.theme-light .clear-btn:hover { color: #ef4444; }
 body.theme-light kbd { background: rgba(0,0,0,0.05); border-color: rgba(0,0,0,0.1); color: var(--text-dim); }
