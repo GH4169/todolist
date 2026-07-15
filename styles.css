@@ -495,22 +495,40 @@ body {
 
 /* ==================== 任务详情描述 ==================== */
 
-/* 父任务描述按钮 */
+/* 父任务描述按钮（和折叠按钮同风格，无边框） */
 .desc-btn {
-  color: var(--text-dim);
+  -webkit-appearance: none;
+  appearance: none;
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.3);
+  width: 28px;
+  height: 28px;
 }
 .desc-btn:hover {
-  color: #fbbf24;
-  background: rgba(251, 191, 36, 0.1);
-  border-color: rgba(251, 191, 36, 0.3);
-  box-shadow: 0 0 12px rgba(251, 191, 36, 0.15);
+  color: rgba(255, 255, 255, 0.6) !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 .desc-btn.has-desc {
   color: #fbbf24;
   opacity: 1;
 }
-.desc-btn .desc-icon {
-  display: block;
+.desc-btn.has-desc:hover {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+}
+.desc-btn.desc-open {
+  color: rgba(255, 255, 255, 0.6);
+}
+.desc-btn .desc-chevron {
+  transition: transform 0.3s ease;
+}
+.desc-btn.desc-open .desc-chevron {
+  transform: rotate(180deg);
 }
 
 /* 子任务行包装器（让描述区域独占一行） */
@@ -621,9 +639,8 @@ body {
 .subtask-section {
   margin-top: 12px;
   padding-left: 38px;
-  overflow: hidden;
   transition: max-height 0.35s ease, opacity 0.3s ease, margin 0.35s ease;
-  max-height: 800px;
+  max-height: none;
   opacity: 1;
 }
 
@@ -631,25 +648,23 @@ body {
   max-height: 0;
   opacity: 0;
   margin-top: 0;
-  padding-top: 0;
-  padding-bottom: 0;
+  padding-left: 0;
+  overflow: hidden;
+}
 }
 
 .collapse-toggle {
+  display: inline-flex;
   width: 28px;
   height: 28px;
-  background: none;
-  border: none;
-  color: rgba(255, 255, 255, 0.3);
-  cursor: pointer;
-  display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: all 0.3s;
+  color: rgba(255, 255, 255, 0.3);
+  cursor: pointer;
   border-radius: 6px;
   margin-top: 1px;
-  padding: 0;
+  transition: all 0.3s;
 }
 
 .collapse-toggle:hover {

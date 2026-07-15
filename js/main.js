@@ -18,7 +18,7 @@ const circumference = 2 * Math.PI * 60;
 let currentFilter = 'all';
 
 // 记录展开的描述区域 key: "todoId" 或 "todoId:subId"
-const openDescriptions = new Set();
+let openDescriptions = new Set();
 
 // ---- 激励语池 ----
 const quotes = [
@@ -138,7 +138,14 @@ function deleteTodo(id) {
 }
 
 function clearCompleted() {
+  const doneIds = new Set(todos.filter(t => t.done).map(t => t.id));
   todos = todos.filter(t => !t.done);
+  // 清理已删除任务的描述展开状态
+  for (const key of openDescriptions) {
+    const id = key.split(':')[0];
+    if (doneIds.has(id)) openDescriptions.delete(key);
+  }
+  saveOpenDescriptions(openDescriptions);
   saveTodos();
   render();
 }
@@ -154,6 +161,7 @@ function toggleDescription(todoId, subId) {
   } else {
     openDescriptions.add(key);
   }
+  saveOpenDescriptions(openDescriptions);
   render();
 }
 
@@ -215,6 +223,17 @@ function startEditDescription(todoId, subId) {
   displayEl.replaceWith(textarea);
   textarea.focus();
   requestAnimationFrame(() => autoResizeTextarea(textarea));
+
+  // 阻止描述按钮在 textarea 打开时 stealing focus（避免 blur→save→render→click 重新展开的竞态）
+  const blockMousedown = (e) => {
+    if (e.target.closest('.desc-btn, .subtask-desc-btn')) {
+      e.preventDefault();
+    }
+  };
+  document.addEventListener('mousedown', blockMousedown);
+  textarea.addEventListener('blur', () => {
+    document.removeEventListener('mousedown', blockMousedown);
+  }, { once: true });
 }
 
 // ============================================================
@@ -361,9 +380,9 @@ function render() {
             <div class="checkbox" data-action="toggle">
               <svg viewBox="0 0 16 16"><polyline points="2 8 6 12 14 4" /></svg>
             </div>
-            ${subtaskCount > 0 ? `<button class="collapse-toggle" data-action="toggle-collapse" data-id="${t.id}" title="${t.collapsed ? '展开子任务' : '折叠子任务'}">
+            ${subtaskCount > 0 ? `<span class="collapse-toggle" data-action="toggle-collapse" data-id="${t.id}" title="${t.collapsed ? '展开子任务' : '折叠子任务'}">
               <svg class="collapse-chevron ${t.collapsed ? 'collapsed' : ''}" viewBox="0 0 12 12"><polyline points="2,3 6,8 10,3" /></svg>
-            </button>` : ''}
+            </span>` : ''}
             <div class="todo-body">
               <div class="todo-text">${t.collapsed && subtaskCount > 0 ? `<span class="progress-badge">${doneCount}/${subtaskCount}</span>` : ''}${escapeHtml(t.text)}</div>
               <div class="task-time">创建于 ${formatTime(t.createdAt)}${t.done && t.completedAt ? ' · 完成于 ' + formatTime(t.completedAt) : ''}</div>
@@ -375,10 +394,9 @@ function render() {
             <div class="todo-actions">
               <button class="action-btn sub-add-action" data-action="show-sub-add" data-todo-id="${t.id}" title="添加子任务">+</button>
               <button class="action-btn edit-btn" data-action="start-edit" data-id="${t.id}" title="编辑标题">✎</button>
-              <button class="action-btn desc-btn ${t.description ? 'has-desc' : ''}" data-action="toggle-desc" data-id="${t.id}" title="详情描述">
-                <svg class="desc-icon" viewBox="0 0 16 16" width="14" height="14" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v7a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 11.5v-7z"/>
-                  <path d="M5.5 6.5h5M5.5 9h3.5"/>
+              <button class="action-btn desc-btn ${t.description ? 'has-desc' : ''} ${openDescriptions.has(t.id) ? 'desc-open' : ''}" data-action="toggle-desc" data-id="${t.id}" title="详情描述">
+                <svg class="desc-chevron" viewBox="0 0 12 12" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="2,3 6,8 10,3"/>
                 </svg>
               </button>
               <button class="action-btn" data-action="delete" data-id="${t.id}" title="删除">✕</button>
@@ -774,6 +792,7 @@ function setDailyQuote() {
 // ============================================================
 
 loadTodos();
+openDescriptions = loadOpenDescriptions(todos);
 createParticles();
 setDailyQuote();
 updateDateTime();
