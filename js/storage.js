@@ -1,90 +1,180 @@
 // ============================================================
-// storage.js — LocalStorage 读写 & 数据初始化
+// storage.js - Supabase 数据访问层
 // ============================================================
 
-const STORAGE_KEY = 'geek-todos';
+const SUPABASE_URL = 'https://zfxvwlddhxhjumwedsjt.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_CvJ8Fw0wcuvx_ND7BG6H7A_yVqG9xoc';
 
-/**
- * 全局 todos 数组，由 main.js 共享。
- * 所有 CRUD 操作通过 main.js 中的方法修改此数组，
- * 随后调用 saveTodos() 持久化。
- */
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false,
+  },
+});
+
+// main.js 使用的内存视图；Supabase 是唯一的任务持久化数据源。
 let todos = [];
 
-/**
- * 从 LocalStorage 读取原始数据并做结构归一化。
- * 确保每条任务都包含 subtasks / collapsed / createdAt / completedAt / description 字段。
- */
-function loadTodos() {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  const parsed = raw ? JSON.parse(raw) : [];
-  todos = parsed.map(t => ({
-    ...t,
-    subtasks: (t.subtasks || []).map(s => ({
-      ...s,
-      description: s.description || '',
-    })),
-    collapsed: t.collapsed || false,
-    createdAt: t.createdAt || Date.now(),
-    completedAt: t.completedAt || null,
-    description: t.description || '',
-  }));
+function parseTime(value) {
+  return value ? new Date(value).getTime() : null;
 }
 
-/**
- * 将当前 todos 数组序列化后写入 LocalStorage。
- */
-function saveTodos() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
+function mapRow(row) {
+  return {
+    id: row.id,
+    parentId: row.parent_id,
+    text: row.text,
+    done: row.is_completed,
+    subtasks: [],
+    collapsed: row.is_collapsed,
+    descriptionOpen: row.is_description_open,
+    position: row.position,
+    createdAt: parseTime(row.created_at),
+    completedAt: parseTime(row.completed_at),
+    description: row.description || '',
+  };
 }
 
-/**
- * 生成唯一 ID（基于时间戳 + 随机字符串）。
- */
-function uid() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-}
+function toDatabaseChanges(changes) {
+  const result = {};
+  const mappings = {
+    text: 'text',
+    done: 'is_completed',
+    collapsed: 'is_collapsed',
+    descriptionOpen: 'is_description_open',
+    description: 'description',
+    position: 'position',
+  };
 
-// ============================================================
-// 描述展开状态持久化
-// ============================================================
-
-const DESC_KEY = 'geek-todos-open-descriptions';
-
-/**
- * 从 localStorage 读取展开的描述 key 集合，
- * 并过滤掉当前数据中 description 为空的 key（避免空框显示）。
- * @param {Array} todos - 已加载的 todos 数组
- * @returns {Set<string>}
- */
-function loadOpenDescriptions(todos) {
-  const raw = localStorage.getItem(DESC_KEY);
-  if (!raw) return new Set();
-  try {
-    const keys = new Set(JSON.parse(raw));
-    // 只保留有实际描述内容的 key
-    const valid = new Set();
-    for (const key of keys) {
-      if (key.includes(':')) {
-        const [tid, sid] = key.split(':');
-        const t = todos.find(t => t.id === tid);
-        const sub = t?.subtasks.find(s => s.id === sid);
-        if (sub?.description) valid.add(key);
-      } else {
-        const t = todos.find(t => t.id === key);
-        if (t?.description) valid.add(key);
-      }
-    }
-    return valid;
-  } catch {
-    return new Set();
+  for (const [appKey, column] of Object.entries(mappings)) {
+    if (Object.hasOwn(changes, appKey)) result[column] = changes[appKey];
   }
+
+  if (Object.hasOwn(changes, 'completedAt')) {
+    result.completed_at = changes.completedAt
+      ? new Date(changes.completedAt).toISOString()
+      : null;
+  }
+
+  return result;
 }
 
-/**
- * 将当前展开的描述 key 集合写入 localStorage。
- * @param {Set<string>} set
- */
-function saveOpenDescriptions(set) {
-  localStorage.setItem(DESC_KEY, JSON.stringify([...set]));
+/** 从云端读取所有任务，并组装为父任务/子任务结构。 */
+async function loadTodos() {
+  const { data, error } = await supabaseClient
+    .from('todos')
+    .select('*')
+    .order('position', { ascending: true })
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+
+  const items = data.map(mapRow);
+  const parents = items.filter(item => !item.parentId);
+  const parentById = new Map(parents.map(item => [item.id, item]));
+
+  for (const item of items) {
+    if (item.parentId && parentById.has(item.parentId)) {
+      parentById.get(item.parentId).subtasks.push(item);
+    }
+  }
+
+  todos = parents;
+  return todos;
+}
+
+/** 新增父任务或子任务，并返回服务器生成 ID 后的完整记录。 */
+async function createTodoRecord({ text, parentId = null, position = 0 }) {
+  const { data, error } = await supabaseClient
+    .from('todos')
+    .insert({
+      text,
+      parent_id: parentId,
+      position,
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapRow(data);
+}
+
+/** 更新一条父任务或子任务。 */
+async function updateTodoRecord(id, changes) {
+  const { data, error } = await supabaseClient
+    .from('todos')
+    .update(toDatabaseChanges(changes))
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapRow(data);
+}
+
+/** 删除一条记录；删除父任务时，数据库外键会级联删除其子任务。 */
+async function deleteTodoRecord(id) {
+  const { error } = await supabaseClient
+    .from('todos')
+    .delete()
+    .eq('id', id);
+
+  if (error) throw error;
+}
+
+/** 批量删除已完成的父任务。 */
+async function deleteTodoRecords(ids) {
+  if (ids.length === 0) return;
+
+  const { error } = await supabaseClient
+    .from('todos')
+    .delete()
+    .in('id', ids);
+
+  if (error) throw error;
+}
+
+/** 持久化当前父任务及子任务的拖拽顺序。 */
+async function saveTodoPositions() {
+  const updates = [];
+
+  todos.forEach((todo, position) => {
+    updates.push(updateTodoRecord(todo.id, { position }));
+    todo.subtasks.forEach((subtask, subPosition) => {
+      updates.push(updateTodoRecord(subtask.id, { position: subPosition }));
+    });
+  });
+
+  await Promise.all(updates);
+}
+
+/** 描述展开状态也存放在 todos 表中，不再使用 localStorage。 */
+function loadOpenDescriptions(items) {
+  const open = new Set();
+
+  for (const todo of items) {
+    if (todo.descriptionOpen) open.add(todo.id);
+    for (const subtask of todo.subtasks) {
+      if (subtask.descriptionOpen) open.add(`${todo.id}:${subtask.id}`);
+    }
+  }
+
+  return open;
+}
+
+/** 监听其他设备的增删改，并由 main.js 重新拉取最新数据。 */
+function subscribeTodoChanges(onChange) {
+  return supabaseClient
+    .channel('todos-cloud-sync')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'todos' },
+      onChange,
+    )
+    .subscribe();
+}
+
+function unsubscribeTodoChanges(channel) {
+  if (channel) supabaseClient.removeChannel(channel);
 }

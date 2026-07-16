@@ -19,6 +19,8 @@ let currentFilter = 'all';
 
 // 记录展开的描述区域 key: "todoId" 或 "todoId:subId"
 let openDescriptions = new Set();
+let todoChannel = null;
+let realtimeRefreshTimer = null;
 
 // ---- 激励语池 ----
 const quotes = [
@@ -43,126 +45,176 @@ document.querySelectorAll('.theme-btn').forEach(btn => {
 // 核心数据操作
 // ============================================================
 
-function addTodo() {
-  const text = input.value.trim();
-  if (!text) return;
-  todos.push({
-    id: uid(),
-    text,
-    done: false,
-    subtasks: [],
-    createdAt: Date.now(),
-    completedAt: null,
-    description: '',
-  });
-  input.value = '';
-  input.focus();
-  saveTodos();
-  render();
+function showCloudError(error) {
+  console.error('Supabase 操作失败:', error);
+  window.alert(`云端同步失败：${error.message || '请检查网络和 Supabase 配置'}`);
 }
 
-function toggleTodo(id) {
-  const t = todos.find(t => t.id === id);
-  if (t) {
-    t.done = !t.done;
-    t.completedAt = t.done ? Date.now() : null;
-    saveTodos();
+async function restoreCloudState(error) {
+  showCloudError(error);
+  try {
+    await loadTodos();
+    openDescriptions = loadOpenDescriptions(todos);
     render();
+  } catch (reloadError) {
+    console.error('重新读取云端数据失败:', reloadError);
   }
 }
 
-function toggleSubtask(todoId, subId) {
+async function addTodo() {
+  const text = input.value.trim();
+  if (!text) return;
+  try {
+    const todo = await createTodoRecord({ text, position: todos.length });
+    todos.push(todo);
+    input.value = '';
+    input.focus();
+    render();
+  } catch (error) {
+    showCloudError(error);
+  }
+}
+
+async function toggleTodo(id) {
+  const t = todos.find(t => t.id === id);
+  if (t) {
+    const done = !t.done;
+    const completedAt = done ? Date.now() : null;
+    try {
+      await updateTodoRecord(id, { done, completedAt });
+      t.done = done;
+      t.completedAt = completedAt;
+      render();
+    } catch (error) {
+      await restoreCloudState(error);
+    }
+  }
+}
+
+async function toggleSubtask(todoId, subId) {
   const t = todos.find(t => t.id === todoId);
   if (!t) return;
   const sub = t.subtasks.find(s => s.id === subId);
   if (sub) {
-    sub.done = !sub.done;
-    sub.completedAt = sub.done ? Date.now() : null;
+    const done = !sub.done;
+    const completedAt = done ? Date.now() : null;
+    const siblingStates = t.subtasks.map(item => item.id === subId ? done : item.done);
+    const parentDone = siblingStates.every(Boolean);
+    const parentCompletedAt = parentDone ? (t.completedAt || Date.now()) : null;
+
     // 双向同步：所有子任务完成 → 父任务完成；有子任务取消 → 父任务取消
-    if (t.subtasks.length > 0) {
-      if (t.subtasks.every(s => s.done)) {
-        t.done = true;
-        t.completedAt = Date.now();
-      } else if (t.done) {
+    try {
+      await Promise.all([
+        updateTodoRecord(subId, { done, completedAt }),
+        updateTodoRecord(todoId, { done: parentDone, completedAt: parentCompletedAt }),
+      ]);
+      sub.done = done;
+      sub.completedAt = completedAt;
+      t.done = parentDone;
+      t.completedAt = parentCompletedAt;
+      render();
+    } catch (error) {
+      await restoreCloudState(error);
+    }
+  }
+}
+
+async function addSubtask(todoId, text) {
+  const t = todos.find(t => t.id === todoId);
+  if (t && text.trim()) {
+    try {
+      const operations = [createTodoRecord({
+        text: text.trim(),
+        parentId: todoId,
+        position: t.subtasks.length,
+      })];
+      if (t.done) {
+        operations.push(updateTodoRecord(todoId, { done: false, completedAt: null }));
+      }
+      const [subtask] = await Promise.all(operations);
+      t.subtasks.push(subtask);
+      if (t.done) {
         t.done = false;
         t.completedAt = null;
       }
-    }
-    saveTodos();
-    render();
-  }
-}
-
-function addSubtask(todoId, text) {
-  const t = todos.find(t => t.id === todoId);
-  if (t && text.trim()) {
-    t.subtasks.push({
-      id: uid(),
-      text: text.trim(),
-      done: false,
-      createdAt: Date.now(),
-      completedAt: null,
-      description: '',
-    });
-    if (t.done) t.done = false;
-    saveTodos();
-    render();
-  }
-}
-
-function deleteSubtask(todoId, subId) {
-  const item = document.querySelector(`.subtask-item[data-id="${subId}"]`);
-  if (item) {
-    item.classList.add('removing');
-    setTimeout(() => {
-      const t = todos.find(t => t.id === todoId);
-      if (t) {
-        t.subtasks = t.subtasks.filter(s => s.id !== subId);
-        saveTodos();
-        render();
-      }
-    }, 250);
-  }
-}
-
-function deleteTodo(id) {
-  const item = document.querySelector(`.todo-item[data-id="${id}"]`);
-  if (item) {
-    item.classList.add('removing');
-    setTimeout(() => {
-      todos = todos.filter(t => t.id !== id);
-      saveTodos();
       render();
-    }, 300);
+    } catch (error) {
+      await restoreCloudState(error);
+    }
   }
 }
 
-function clearCompleted() {
-  const doneIds = new Set(todos.filter(t => t.done).map(t => t.id));
-  todos = todos.filter(t => !t.done);
-  // 清理已删除任务的描述展开状态
-  for (const key of openDescriptions) {
-    const id = key.split(':')[0];
-    if (doneIds.has(id)) openDescriptions.delete(key);
+async function deleteSubtask(todoId, subId) {
+  const item = document.querySelector(`.subtask-item[data-id="${subId}"]`);
+  if (!item) return;
+  item.classList.add('removing');
+  await new Promise(resolve => setTimeout(resolve, 250));
+
+  try {
+    await deleteTodoRecord(subId);
+    const t = todos.find(t => t.id === todoId);
+    if (t) t.subtasks = t.subtasks.filter(s => s.id !== subId);
+    openDescriptions.delete(`${todoId}:${subId}`);
+    render();
+  } catch (error) {
+    await restoreCloudState(error);
   }
-  saveOpenDescriptions(openDescriptions);
-  saveTodos();
-  render();
+}
+
+async function deleteTodo(id) {
+  const item = document.querySelector(`.todo-item[data-id="${id}"]`);
+  if (!item) return;
+  item.classList.add('removing');
+  await new Promise(resolve => setTimeout(resolve, 300));
+
+  try {
+    await deleteTodoRecord(id);
+    todos = todos.filter(t => t.id !== id);
+    for (const key of openDescriptions) {
+      if (key === id || key.startsWith(`${id}:`)) openDescriptions.delete(key);
+    }
+    render();
+  } catch (error) {
+    await restoreCloudState(error);
+  }
+}
+
+async function clearCompleted() {
+  const doneIds = new Set(todos.filter(t => t.done).map(t => t.id));
+  try {
+    await deleteTodoRecords([...doneIds]);
+    todos = todos.filter(t => !t.done);
+    // 清理已删除任务的描述展开状态
+    for (const key of openDescriptions) {
+      const id = key.split(':')[0];
+      if (doneIds.has(id)) openDescriptions.delete(key);
+    }
+    render();
+  } catch (error) {
+    await restoreCloudState(error);
+  }
 }
 
 // ============================================================
 // 任务详情描述
 // ============================================================
 
-function toggleDescription(todoId, subId) {
+async function toggleDescription(todoId, subId) {
   const key = subId ? `${todoId}:${subId}` : todoId;
-  if (openDescriptions.has(key)) {
-    openDescriptions.delete(key);
-  } else {
-    openDescriptions.add(key);
+  const todo = todos.find(item => item.id === todoId);
+  const target = subId ? todo?.subtasks.find(item => item.id === subId) : todo;
+  if (!target) return;
+
+  const descriptionOpen = !openDescriptions.has(key);
+  try {
+    await updateTodoRecord(target.id, { descriptionOpen });
+    target.descriptionOpen = descriptionOpen;
+    if (descriptionOpen) openDescriptions.add(key);
+    else openDescriptions.delete(key);
+    render();
+  } catch (error) {
+    await restoreCloudState(error);
   }
-  saveOpenDescriptions(openDescriptions);
-  render();
 }
 
 function autoResizeTextarea(el) {
@@ -194,21 +246,28 @@ function startEditDescription(todoId, subId) {
 
   let saved = false;
 
-  const save = () => {
+  const save = async () => {
     if (saved) return;
     saved = true;
     const newDesc = textarea.value.trim();
     const key = subId ? `${todoId}:${subId}` : todoId;
-    if (subId) {
-      const sub = t.subtasks.find(s => s.id === subId);
-      if (sub) sub.description = newDesc;
-    } else {
-      t.description = newDesc;
+    const target = subId ? t.subtasks.find(s => s.id === subId) : t;
+    if (!target) return;
+
+    try {
+      const changes = { description: newDesc };
+      // 清空描述时同时收起，避免渲染空框
+      if (!newDesc) changes.descriptionOpen = false;
+      await updateTodoRecord(target.id, changes);
+      target.description = newDesc;
+      if (!newDesc) {
+        target.descriptionOpen = false;
+        openDescriptions.delete(key);
+      }
+      render();
+    } catch (error) {
+      await restoreCloudState(error);
     }
-    // 清空描述时同时收起，避免渲染空框
-    if (!newDesc) openDescriptions.delete(key);
-    saveTodos();
-    render();
   };
 
   textarea.addEventListener('blur', save);
@@ -318,7 +377,7 @@ function render() {
   const filtered = todos.filter(t => {
     if (currentFilter === 'active') return !t.done;
     if (currentFilter === 'completed') return t.done;
-    return !t.done;
+    return true;
   });
 
   if (filtered.length === 0) {
@@ -448,11 +507,18 @@ function startEditTitle(id) {
   sel.removeAllRanges();
   sel.addRange(range);
 
-  const finish = () => {
+  const originalText = t.text;
+  let cancelled = false;
+  const finish = async () => {
     const newText = textEl.textContent.trim();
-    if (newText) {
-      t.text = newText;
-      saveTodos();
+    if (!cancelled && newText && newText !== originalText) {
+      try {
+        await updateTodoRecord(id, { text: newText });
+        t.text = newText;
+      } catch (error) {
+        await restoreCloudState(error);
+        return;
+      }
     }
     textEl.contentEditable = 'false';
     textEl.classList.remove('editing');
@@ -463,7 +529,8 @@ function startEditTitle(id) {
   textEl.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); textEl.blur(); }
     if (e.key === 'Escape') {
-      textEl.textContent = t.text; // 还原
+      cancelled = true;
+      textEl.textContent = originalText;
       textEl.blur();
     }
   });
@@ -487,11 +554,18 @@ function startEditSubtask(todoId, subId) {
   sel.removeAllRanges();
   sel.addRange(range);
 
-  const finish = () => {
+  const originalText = sub.text;
+  let cancelled = false;
+  const finish = async () => {
     const newText = textEl.textContent.trim();
-    if (newText) {
-      sub.text = newText;
-      saveTodos();
+    if (!cancelled && newText && newText !== originalText) {
+      try {
+        await updateTodoRecord(subId, { text: newText });
+        sub.text = newText;
+      } catch (error) {
+        await restoreCloudState(error);
+        return;
+      }
     }
     textEl.contentEditable = 'false';
     textEl.classList.remove('editing');
@@ -502,7 +576,8 @@ function startEditSubtask(todoId, subId) {
   textEl.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); textEl.blur(); }
     if (e.key === 'Escape') {
-      textEl.textContent = sub.text;
+      cancelled = true;
+      textEl.textContent = originalText;
       textEl.blur();
     }
   });
@@ -587,7 +662,7 @@ list.addEventListener('dragleave', (e) => {
   }
 });
 
-list.addEventListener('drop', (e) => {
+list.addEventListener('drop', async (e) => {
   e.preventDefault();
 
   // 子任务排序
@@ -607,8 +682,12 @@ list.addEventListener('drop', (e) => {
     const [moved] = t.subtasks.splice(fromIndex, 1);
     t.subtasks.splice(toIndex, 0, moved);
 
-    saveTodos();
     render();
+    try {
+      await saveTodoPositions();
+    } catch (error) {
+      await restoreCloudState(error);
+    }
     return;
   }
 
@@ -627,8 +706,12 @@ list.addEventListener('drop', (e) => {
   const [moved] = todos.splice(fromIndex, 1);
   todos.splice(toIndex, 0, moved);
 
-  saveTodos();
   render();
+  try {
+    await saveTodoPositions();
+  } catch (error) {
+    await restoreCloudState(error);
+  }
 });
 
 // ============================================================
@@ -679,9 +762,13 @@ list.addEventListener('click', (e) => {
     e.stopPropagation();
     const t = todos.find(t => t.id === actionEl.dataset.id);
     if (t) {
-      t.collapsed = !t.collapsed;
-      saveTodos();
-      render();
+      const collapsed = !t.collapsed;
+      updateTodoRecord(t.id, { collapsed })
+        .then(() => {
+          t.collapsed = collapsed;
+          render();
+        })
+        .catch(restoreCloudState);
     }
   } else if (action === 'toggle-desc') {
     e.stopPropagation();
@@ -803,11 +890,37 @@ function setDailyQuote() {
 // 启动
 // ============================================================
 
-loadTodos();
-openDescriptions = loadOpenDescriptions(todos);
-createParticles();
-setDailyQuote();
-updateDateTime();
-setInterval(updateDateTime, 1000);
-initTheme();
-render();
+function scheduleRealtimeRefresh() {
+  clearTimeout(realtimeRefreshTimer);
+  realtimeRefreshTimer = setTimeout(async () => {
+    try {
+      await loadTodos();
+      openDescriptions = loadOpenDescriptions(todos);
+      render();
+    } catch (error) {
+      console.error('实时同步刷新失败:', error);
+    }
+  }, 150);
+}
+
+async function initApp() {
+  createParticles();
+  setDailyQuote();
+  updateDateTime();
+  setInterval(updateDateTime, 1000);
+  initTheme();
+
+  list.innerHTML = '<li class="empty-state"><p>正在从云端加载...</p></li>';
+  try {
+    await loadTodos();
+    openDescriptions = loadOpenDescriptions(todos);
+    render();
+    todoChannel = subscribeTodoChanges(scheduleRealtimeRefresh);
+  } catch (error) {
+    showCloudError(error);
+    list.innerHTML = '<li class="empty-state"><p>云端数据加载失败，请检查建表语句与网络连接。</p></li>';
+  }
+}
+
+window.addEventListener('beforeunload', () => unsubscribeTodoChanges(todoChannel));
+initApp();
