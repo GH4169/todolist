@@ -216,6 +216,18 @@ function startEditDescription(todoId, subId) {
     if (e.key === 'Escape') {
       saved = true; // 阻止 blur 保存
       render(); // 重新渲染恢复原始内容
+      return;
+    }
+
+    if (subId && e.key === 'Enter' && !e.isComposing) {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        textarea.setRangeText('\n', textarea.selectionStart, textarea.selectionEnd, 'end');
+        autoResizeTextarea(textarea);
+        return;
+      }
+      e.preventDefault();
+      save();
     }
   });
   textarea.addEventListener('input', () => autoResizeTextarea(textarea));
