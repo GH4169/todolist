@@ -306,7 +306,7 @@ function render() {
   const filtered = todos.filter(t => {
     if (currentFilter === 'active') return !t.done;
     if (currentFilter === 'completed') return t.done;
-    return true;
+    return !t.done;
   });
 
   if (filtered.length === 0) {
