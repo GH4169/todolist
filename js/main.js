@@ -233,6 +233,125 @@ function removeTodoItem(id, parentId) {
   return affectedTodoIds;
 }
 
+function syncTodoCompletionDom(todo) {
+  let todoElement = getTodoElement(todo.id);
+  if (!isTodoVisible(todo)) {
+    todoElement?.remove();
+    if (!list.querySelector(':scope > .todo-item')) list.innerHTML = getEmptyStateHtml();
+    return null;
+  }
+
+  if (!todoElement) {
+    renderChangedTodos(new Set([todo.id]));
+    todoElement = getTodoElement(todo.id);
+  }
+  if (!todoElement) return null;
+
+  todoElement.classList.toggle('done', todo.done);
+  const timeElement = todoElement.querySelector('.task-time');
+  if (timeElement) {
+    timeElement.textContent = `创建于 ${formatTime(todo.createdAt)}${todo.done && todo.completedAt ? ' · 完成于 ' + formatTime(todo.completedAt) : ''}`;
+  }
+  return todoElement;
+}
+
+function syncSubtaskCompletionDom(todo, subtask) {
+  const todoElement = syncTodoCompletionDom(todo);
+  if (todoElement) {
+    const subtaskElement = [...todoElement.querySelectorAll('.subtask-item')]
+      .find(element => element.dataset.id === subtask.id);
+    if (subtaskElement) {
+      subtaskElement.classList.toggle('done', subtask.done);
+      const timeElement = subtaskElement.querySelector('.subtask-time');
+      if (timeElement) {
+        timeElement.textContent = `${formatTime(subtask.createdAt)}${subtask.done && subtask.completedAt ? ' · ' + formatTime(subtask.completedAt) : ''}`;
+      }
+    }
+
+    const doneCount = todo.subtasks.filter(item => item.done).length;
+    const progressFill = todoElement.querySelector('.subtask-bar-fill');
+    const doneCountElement = todoElement.querySelector('.subtask-count .done-count');
+    const progressBadge = todoElement.querySelector('.progress-badge');
+    if (progressFill) progressFill.style.width = `${Math.round((doneCount / todo.subtasks.length) * 100)}%`;
+    if (doneCountElement) doneCountElement.textContent = doneCount;
+    if (progressBadge) progressBadge.textContent = `${doneCount}/${todo.subtasks.length}`;
+  }
+  updateListSummary();
+}
+
+function getDescriptionTarget(todoId, subId) {
+  const todo = todos.find(item => item.id === todoId);
+  if (!todo) return null;
+  const target = subId
+    ? todo.subtasks.find(item => item.id === subId)
+    : todo;
+  return target ? { todo, target } : null;
+}
+
+function getDescriptionSection(todoId, subId) {
+  const selector = subId
+    ? `.subtask-desc-section[data-sub-id="${subId}"]`
+    : `.desc-section[data-id="${todoId}"]`;
+  return document.querySelector(selector);
+}
+
+function getDescriptionButton(todoId, subId) {
+  if (subId) {
+    const subtaskElement = document.querySelector(`.subtask-item[data-id="${subId}"]`);
+    return subtaskElement?.querySelector('.subtask-desc-btn') || null;
+  }
+  return getTodoElement(todoId)?.querySelector('.desc-btn') || null;
+}
+
+function createDescriptionSection(todoId, subId) {
+  const section = document.createElement('div');
+  if (subId) {
+    section.className = 'subtask-desc-section';
+    section.dataset.todoId = todoId;
+    section.dataset.subId = subId;
+    document.querySelector(`.subtask-item[data-id="${subId}"]`)?.appendChild(section);
+  } else {
+    section.className = 'desc-section';
+    section.dataset.id = todoId;
+    const todoBody = getTodoElement(todoId)?.querySelector('.todo-body');
+    const subtaskSection = todoBody?.querySelector('.subtask-section');
+    todoBody?.insertBefore(section, subtaskSection || null);
+  }
+  return section.isConnected ? section : null;
+}
+
+function syncDescriptionDom(todoId, subId) {
+  const state = getDescriptionTarget(todoId, subId);
+  if (!state) return;
+  const { target } = state;
+  const key = subId ? `${todoId}:${subId}` : todoId;
+  const isOpen = openDescriptions.has(key);
+  const shouldExist = Boolean(target.description || isOpen);
+  let section = getDescriptionSection(todoId, subId);
+  const button = getDescriptionButton(todoId, subId);
+
+  button?.classList.toggle('has-desc', Boolean(target.description));
+  if (!subId) button?.classList.toggle('desc-open', isOpen);
+
+  if (!shouldExist) {
+    section?.remove();
+    return;
+  }
+
+  if (!section) section = createDescriptionSection(todoId, subId);
+  if (!section) return;
+  section.style.display = isOpen ? 'block' : 'none';
+
+  let displayElement = section.querySelector('.desc-display');
+  if (!displayElement) {
+    displayElement = document.createElement('div');
+    displayElement.className = 'desc-display';
+    section.querySelector('.desc-edit')?.replaceWith(displayElement);
+    if (!displayElement.isConnected) section.appendChild(displayElement);
+  }
+  displayElement.textContent = target.description || '';
+}
+
 async function addTodo() {
   const text = input.value.trim();
   if (!text) return;
@@ -252,15 +371,25 @@ async function addTodo() {
 async function toggleTodo(id) {
   const t = todos.find(t => t.id === id);
   if (t) {
+    const previousDone = t.done;
+    const previousCompletedAt = t.completedAt;
     const done = !t.done;
     const completedAt = done ? Date.now() : null;
+    t.done = done;
+    t.completedAt = completedAt;
+    syncTodoCompletionDom(t);
+    updateListSummary();
+
     try {
       await updateTodoWithRealtimeEcho(id, { done, completedAt });
-      t.done = done;
-      t.completedAt = completedAt;
-      renderChangedTodos(new Set([id]));
     } catch (error) {
-      await restoreCloudState(error);
+      if (t.done === done && t.completedAt === completedAt) {
+        t.done = previousDone;
+        t.completedAt = previousCompletedAt;
+        syncTodoCompletionDom(t);
+        updateListSummary();
+      }
+      showCloudError(error);
     }
   }
 }
@@ -270,11 +399,21 @@ async function toggleSubtask(todoId, subId) {
   if (!t) return;
   const sub = t.subtasks.find(s => s.id === subId);
   if (sub) {
+    const previousSubDone = sub.done;
+    const previousSubCompletedAt = sub.completedAt;
+    const previousParentDone = t.done;
+    const previousParentCompletedAt = t.completedAt;
     const done = !sub.done;
     const completedAt = done ? Date.now() : null;
     const siblingStates = t.subtasks.map(item => item.id === subId ? done : item.done);
     const parentDone = siblingStates.every(Boolean);
     const parentCompletedAt = parentDone ? (t.completedAt || Date.now()) : null;
+
+    sub.done = done;
+    sub.completedAt = completedAt;
+    t.done = parentDone;
+    t.completedAt = parentCompletedAt;
+    syncSubtaskCompletionDom(t, sub);
 
     // 双向同步：所有子任务完成 → 父任务完成；有子任务取消 → 父任务取消
     try {
@@ -282,13 +421,20 @@ async function toggleSubtask(todoId, subId) {
         updateTodoWithRealtimeEcho(subId, { done, completedAt }),
         updateTodoWithRealtimeEcho(todoId, { done: parentDone, completedAt: parentCompletedAt }),
       ]);
-      sub.done = done;
-      sub.completedAt = completedAt;
-      t.done = parentDone;
-      t.completedAt = parentCompletedAt;
-      renderChangedTodos(new Set([todoId]));
     } catch (error) {
-      await restoreCloudState(error);
+      if (
+        sub.done === done
+        && sub.completedAt === completedAt
+        && t.done === parentDone
+        && t.completedAt === parentCompletedAt
+      ) {
+        sub.done = previousSubDone;
+        sub.completedAt = previousSubCompletedAt;
+        t.done = previousParentDone;
+        t.completedAt = previousParentCompletedAt;
+        syncSubtaskCompletionDom(t, sub);
+      }
+      showCloudError(error);
     }
   }
 }
@@ -380,19 +526,27 @@ async function clearCompleted() {
 
 async function toggleDescription(todoId, subId) {
   const key = subId ? `${todoId}:${subId}` : todoId;
-  const todo = todos.find(item => item.id === todoId);
-  const target = subId ? todo?.subtasks.find(item => item.id === subId) : todo;
-  if (!target) return;
+  const state = getDescriptionTarget(todoId, subId);
+  if (!state) return;
+  const { target } = state;
 
+  const previousDescriptionOpen = target.descriptionOpen;
   const descriptionOpen = !openDescriptions.has(key);
+  target.descriptionOpen = descriptionOpen;
+  if (descriptionOpen) openDescriptions.add(key);
+  else openDescriptions.delete(key);
+  syncDescriptionDom(todoId, subId);
+
   try {
     await updateTodoWithRealtimeEcho(target.id, { descriptionOpen });
-    target.descriptionOpen = descriptionOpen;
-    if (descriptionOpen) openDescriptions.add(key);
-    else openDescriptions.delete(key);
-    renderChangedTodos(new Set([todoId]));
   } catch (error) {
-    await restoreCloudState(error);
+    if (target.descriptionOpen === descriptionOpen) {
+      target.descriptionOpen = previousDescriptionOpen;
+      if (previousDescriptionOpen) openDescriptions.add(key);
+      else openDescriptions.delete(key);
+      syncDescriptionDom(todoId, subId);
+    }
+    showCloudError(error);
   }
 }
 
@@ -424,36 +578,57 @@ function startEditDescription(todoId, subId) {
   textarea.rows = 2;
 
   let saved = false;
+  const key = subId ? `${todoId}:${subId}` : todoId;
+  const originalWasOpen = openDescriptions.has(key);
+  const originalDescriptionOpen = subId
+    ? t.subtasks.find(s => s.id === subId)?.descriptionOpen
+    : t.descriptionOpen;
 
   const save = async () => {
     if (saved) return;
     saved = true;
     const newDesc = textarea.value.trim();
-    const key = subId ? `${todoId}:${subId}` : todoId;
     const target = subId ? t.subtasks.find(s => s.id === subId) : t;
     if (!target) return;
 
+    const changes = { description: newDesc };
+    if (!newDesc) changes.descriptionOpen = false;
+
+    target.description = newDesc;
+    if (!newDesc) {
+      target.descriptionOpen = false;
+      openDescriptions.delete(key);
+    }
+    const optimisticDescriptionOpen = target.descriptionOpen;
+    syncDescriptionDom(todoId, subId);
+
+    const needsUpdate = newDesc !== currentDesc || (!newDesc && originalWasOpen);
+    if (!needsUpdate) return;
+
     try {
-      const changes = { description: newDesc };
-      // 清空描述时同时收起，避免渲染空框
-      if (!newDesc) changes.descriptionOpen = false;
       await updateTodoWithRealtimeEcho(target.id, changes);
-      target.description = newDesc;
-      if (!newDesc) {
-        target.descriptionOpen = false;
-        openDescriptions.delete(key);
-      }
-      renderChangedTodos(new Set([todoId]));
     } catch (error) {
-      await restoreCloudState(error);
+      if (
+        target.description === newDesc
+        && target.descriptionOpen === optimisticDescriptionOpen
+      ) {
+        target.description = currentDesc;
+        target.descriptionOpen = originalDescriptionOpen;
+        if (originalWasOpen) openDescriptions.add(key);
+        else openDescriptions.delete(key);
+        syncDescriptionDom(todoId, subId);
+      }
+      showCloudError(error);
     }
   };
 
   textarea.addEventListener('blur', save);
   textarea.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
       saved = true; // 阻止 blur 保存
-      renderChangedTodos(new Set([todoId]));
+      syncDescriptionDom(todoId, subId);
       return;
     }
 
@@ -465,6 +640,7 @@ function startEditDescription(todoId, subId) {
         return;
       }
       e.preventDefault();
+      e.stopPropagation();
       save();
     }
   });
@@ -474,7 +650,7 @@ function startEditDescription(todoId, subId) {
   textarea.focus();
   requestAnimationFrame(() => autoResizeTextarea(textarea));
 
-  // 阻止描述按钮在 textarea 打开时 stealing focus（避免 blur→save→render→click 重新展开的竞态）
+  // 避免描述编辑 blur 保存时，同一次点击又触发描述按钮切换。
   const blockMousedown = (e) => {
     if (e.target.closest('.desc-btn, .subtask-desc-btn')) {
       e.preventDefault();
@@ -1012,10 +1188,12 @@ list.addEventListener('click', (e) => {
   const todoId = item.dataset.id;
 
   if (action === 'toggle') {
+    e.preventDefault();
     toggleTodo(todoId);
   } else if (action === 'delete') {
     deleteTodo(actionEl.dataset.id);
   } else if (action === 'toggle-sub') {
+    e.preventDefault();
     e.stopPropagation();
     const subId = actionEl.dataset.subId;
     toggleSubtask(actionEl.dataset.todoId, subId);
