@@ -4,6 +4,7 @@
 
 const SUPABASE_URL = 'https://zfxvwlddhxhjumwedsjt.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_CvJ8Fw0wcuvx_ND7BG6H7A_yVqG9xoc';
+const initialAuthRedirectType = new URLSearchParams(window.location.hash.slice(1)).get('type');
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {

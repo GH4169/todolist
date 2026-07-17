@@ -21,13 +21,30 @@
       <form class="auth-form" id="authForm">
         <label for="authEmail">邮箱</label>
         <input id="authEmail" name="email" type="email" autocomplete="email" required placeholder="name@company.com">
-        <label for="authPassword">密码</label>
+        <div class="auth-label-row">
+          <label for="authPassword">密码</label>
+          <button class="auth-link" id="forgotPasswordBtn" type="button">忘记密码？</button>
+        </div>
         <input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="6" required placeholder="至少 6 位密码">
         <div class="auth-actions">
           <button class="auth-primary" id="loginBtn" type="submit">登录</button>
           <button class="auth-secondary" id="registerBtn" type="button">注册</button>
         </div>
         <p class="auth-message" id="authMessage" role="status" aria-live="polite"></p>
+      </form>
+
+      <form class="auth-form recovery-form" id="recoveryForm" hidden aria-labelledby="recoveryTitle">
+        <div class="recovery-heading">
+          <h2 id="recoveryTitle">设置新密码</h2>
+        </div>
+        <label for="newPassword">新密码</label>
+        <input id="newPassword" name="new-password" type="password" autocomplete="new-password" minlength="6" required placeholder="至少 6 位密码">
+        <label for="confirmPassword">确认新密码</label>
+        <input id="confirmPassword" name="confirm-password" type="password" autocomplete="new-password" minlength="6" required placeholder="再次输入新密码">
+        <div class="auth-actions auth-actions-single">
+          <button class="auth-primary" id="updatePasswordBtn" type="submit">确认修改</button>
+        </div>
+        <p class="auth-message" id="recoveryMessage" role="status" aria-live="polite"></p>
       </form>
     </section>
   </main>

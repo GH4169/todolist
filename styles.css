@@ -57,6 +57,24 @@ body {
 
 .auth-form { display: grid; gap: 10px; }
 .auth-form label { color: var(--text-dim); font-size: 0.8rem; font-weight: 600; }
+.auth-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.auth-link {
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--neon-blue);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.auth-link:hover { text-decoration: underline; }
+.auth-link:focus-visible { outline: 2px solid var(--neon-blue); outline-offset: 3px; }
+.auth-link:disabled { cursor: wait; opacity: 0.55; }
 .auth-form input {
   width: 100%;
   height: 44px;
@@ -70,6 +88,7 @@ body {
 }
 .auth-form input:focus { border-color: var(--neon-blue); }
 .auth-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+.auth-actions-single { grid-template-columns: 1fr; }
 .auth-actions button,
 .user-session button {
   height: 40px;
@@ -85,6 +104,13 @@ body {
 .auth-message { min-height: 20px; margin-top: 4px; color: var(--text-dim); font-size: 0.8rem; line-height: 1.5; }
 .auth-message.error { color: #f87171; }
 .auth-message.success { color: var(--neon-green); }
+
+.recovery-heading { margin-bottom: 4px; }
+.recovery-heading h2 {
+  color: var(--text);
+  font-size: 1.05rem;
+  letter-spacing: 0;
+}
 
 .user-session {
   display: flex;
