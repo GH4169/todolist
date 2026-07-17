@@ -21,6 +21,9 @@ let currentFilter = 'all';
 let openDescriptions = new Set();
 let todoChannel = null;
 let realtimeRefreshTimer = null;
+const pendingRealtimeEchoes = new Map();
+const recentLocalCreates = new Map();
+const recentLocalDeletes = new Map();
 let activeUserId = null;
 let appSessionVersion = 0;
 
@@ -63,15 +66,184 @@ async function restoreCloudState(error) {
   }
 }
 
+function rememberRealtimeEcho(id, changes) {
+  const token = { changes, expiresAt: Date.now() + 5000 };
+  const queue = pendingRealtimeEchoes.get(id) || [];
+  queue.push(token);
+  pendingRealtimeEchoes.set(id, queue);
+  setTimeout(() => forgetRealtimeEcho(id, token), 5100);
+  return token;
+}
+
+function forgetRealtimeEcho(id, token) {
+  const queue = pendingRealtimeEchoes.get(id);
+  if (!queue) return;
+  const nextQueue = queue.filter(item => item !== token);
+  if (nextQueue.length > 0) pendingRealtimeEchoes.set(id, nextQueue);
+  else pendingRealtimeEchoes.delete(id);
+}
+
+function consumeRealtimeEcho(item) {
+  const queue = pendingRealtimeEchoes.get(item.id);
+  if (!queue) return false;
+
+  const now = Date.now();
+  const activeQueue = queue.filter(token => token.expiresAt > now);
+  const index = activeQueue.findIndex(token => (
+    Object.entries(token.changes).every(([key, value]) => item[key] === value)
+  ));
+
+  if (index === -1) {
+    if (activeQueue.length > 0) pendingRealtimeEchoes.set(item.id, activeQueue);
+    else pendingRealtimeEchoes.delete(item.id);
+    return false;
+  }
+
+  activeQueue.splice(index, 1);
+  if (activeQueue.length > 0) pendingRealtimeEchoes.set(item.id, activeQueue);
+  else pendingRealtimeEchoes.delete(item.id);
+  return true;
+}
+
+async function updateTodoWithRealtimeEcho(id, changes) {
+  const token = rememberRealtimeEcho(id, changes);
+  try {
+    return await updateTodoRecord(id, changes);
+  } catch (error) {
+    forgetRealtimeEcho(id, token);
+    throw error;
+  }
+}
+
+function rememberLocalCreate(id) {
+  const expiresAt = Date.now() + 5000;
+  recentLocalCreates.set(id, expiresAt);
+  setTimeout(() => {
+    if (recentLocalCreates.get(id) === expiresAt) recentLocalCreates.delete(id);
+  }, 5100);
+}
+
+function consumeLocalCreate(id) {
+  const expiresAt = recentLocalCreates.get(id);
+  recentLocalCreates.delete(id);
+  return Boolean(expiresAt && expiresAt > Date.now());
+}
+
+function rememberLocalDelete(id) {
+  const expiresAt = Date.now() + 5000;
+  recentLocalDeletes.set(id, expiresAt);
+  setTimeout(() => {
+    if (recentLocalDeletes.get(id) === expiresAt) recentLocalDeletes.delete(id);
+  }, 5100);
+}
+
+function forgetLocalDelete(id) {
+  recentLocalDeletes.delete(id);
+}
+
+function consumeLocalDelete(id) {
+  const expiresAt = recentLocalDeletes.get(id);
+  recentLocalDeletes.delete(id);
+  return Boolean(expiresAt && expiresAt > Date.now());
+}
+
+function compareTodoOrder(a, b) {
+  return (a.position - b.position) || (a.createdAt - b.createdAt);
+}
+
+function syncOpenDescription(item) {
+  const key = item.parentId ? `${item.parentId}:${item.id}` : item.id;
+  if (item.descriptionOpen) openDescriptions.add(key);
+  else openDescriptions.delete(key);
+}
+
+function findTodoItem(id) {
+  const todo = todos.find(item => item.id === id);
+  if (todo) return { todo, item: todo };
+
+  for (const parent of todos) {
+    const subtask = parent.subtasks.find(item => item.id === id);
+    if (subtask) return { todo: parent, item: subtask };
+  }
+  return null;
+}
+
+function upsertTodoItem(incoming) {
+  if (incoming.userId && incoming.userId !== activeUserId) return new Set();
+  const affectedTodoIds = new Set();
+
+  if (!incoming.parentId) {
+    const existing = todos.find(todo => todo.id === incoming.id);
+    if (existing) {
+      const subtasks = existing.subtasks;
+      Object.assign(existing, incoming, { subtasks });
+    } else {
+      todos.push({ ...incoming, subtasks: incoming.subtasks || [] });
+    }
+    todos.sort(compareTodoOrder);
+    syncOpenDescription(incoming);
+    affectedTodoIds.add(incoming.id);
+    return affectedTodoIds;
+  }
+
+  let oldParent = null;
+  for (const todo of todos) {
+    if (todo.subtasks.some(subtask => subtask.id === incoming.id)) {
+      oldParent = todo;
+      break;
+    }
+  }
+
+  if (oldParent && oldParent.id !== incoming.parentId) {
+    oldParent.subtasks = oldParent.subtasks.filter(subtask => subtask.id !== incoming.id);
+    openDescriptions.delete(`${oldParent.id}:${incoming.id}`);
+    affectedTodoIds.add(oldParent.id);
+  }
+
+  const parent = todos.find(todo => todo.id === incoming.parentId);
+  if (!parent) return null;
+
+  const existing = parent.subtasks.find(subtask => subtask.id === incoming.id);
+  if (existing) Object.assign(existing, incoming, { subtasks: [] });
+  else parent.subtasks.push({ ...incoming, subtasks: [] });
+  parent.subtasks.sort(compareTodoOrder);
+  syncOpenDescription(incoming);
+  affectedTodoIds.add(parent.id);
+  return affectedTodoIds;
+}
+
+function removeTodoItem(id, parentId) {
+  const affectedTodoIds = new Set();
+  const parentIndex = todos.findIndex(todo => todo.id === id);
+  if (parentIndex !== -1) {
+    todos.splice(parentIndex, 1);
+    for (const key of [...openDescriptions]) {
+      if (key === id || key.startsWith(`${id}:`)) openDescriptions.delete(key);
+    }
+    affectedTodoIds.add(id);
+    return affectedTodoIds;
+  }
+
+  const parent = todos.find(todo => todo.id === parentId)
+    || todos.find(todo => todo.subtasks.some(subtask => subtask.id === id));
+  if (!parent) return affectedTodoIds;
+  parent.subtasks = parent.subtasks.filter(subtask => subtask.id !== id);
+  openDescriptions.delete(`${parent.id}:${id}`);
+  affectedTodoIds.add(parent.id);
+  return affectedTodoIds;
+}
+
 async function addTodo() {
   const text = input.value.trim();
   if (!text) return;
   try {
     const todo = await createTodoRecord({ text, position: todos.length });
-    todos.push(todo);
+    const alreadyPresent = Boolean(findTodoItem(todo.id));
+    rememberLocalCreate(todo.id);
+    const affectedTodoIds = upsertTodoItem(todo);
     input.value = '';
     input.focus();
-    render();
+    if (!alreadyPresent) renderChangedTodos(affectedTodoIds);
   } catch (error) {
     showCloudError(error);
   }
@@ -83,10 +255,10 @@ async function toggleTodo(id) {
     const done = !t.done;
     const completedAt = done ? Date.now() : null;
     try {
-      await updateTodoRecord(id, { done, completedAt });
+      await updateTodoWithRealtimeEcho(id, { done, completedAt });
       t.done = done;
       t.completedAt = completedAt;
-      render();
+      renderChangedTodos(new Set([id]));
     } catch (error) {
       await restoreCloudState(error);
     }
@@ -107,14 +279,14 @@ async function toggleSubtask(todoId, subId) {
     // 双向同步：所有子任务完成 → 父任务完成；有子任务取消 → 父任务取消
     try {
       await Promise.all([
-        updateTodoRecord(subId, { done, completedAt }),
-        updateTodoRecord(todoId, { done: parentDone, completedAt: parentCompletedAt }),
+        updateTodoWithRealtimeEcho(subId, { done, completedAt }),
+        updateTodoWithRealtimeEcho(todoId, { done: parentDone, completedAt: parentCompletedAt }),
       ]);
       sub.done = done;
       sub.completedAt = completedAt;
       t.done = parentDone;
       t.completedAt = parentCompletedAt;
-      render();
+      renderChangedTodos(new Set([todoId]));
     } catch (error) {
       await restoreCloudState(error);
     }
@@ -124,6 +296,7 @@ async function toggleSubtask(todoId, subId) {
 async function addSubtask(todoId, text) {
   const t = todos.find(t => t.id === todoId);
   if (t && text.trim()) {
+    const parentWasDone = t.done;
     try {
       const operations = [createTodoRecord({
         text: text.trim(),
@@ -131,15 +304,17 @@ async function addSubtask(todoId, text) {
         position: t.subtasks.length,
       })];
       if (t.done) {
-        operations.push(updateTodoRecord(todoId, { done: false, completedAt: null }));
+        operations.push(updateTodoWithRealtimeEcho(todoId, { done: false, completedAt: null }));
       }
       const [subtask] = await Promise.all(operations);
-      t.subtasks.push(subtask);
+      const alreadyPresent = Boolean(findTodoItem(subtask.id));
+      rememberLocalCreate(subtask.id);
+      const affectedTodoIds = upsertTodoItem(subtask);
       if (t.done) {
         t.done = false;
         t.completedAt = null;
       }
-      render();
+      if (!alreadyPresent || parentWasDone) renderChangedTodos(affectedTodoIds);
     } catch (error) {
       await restoreCloudState(error);
     }
@@ -153,12 +328,11 @@ async function deleteSubtask(todoId, subId) {
   await new Promise(resolve => setTimeout(resolve, 250));
 
   try {
+    rememberLocalDelete(subId);
     await deleteTodoRecord(subId);
-    const t = todos.find(t => t.id === todoId);
-    if (t) t.subtasks = t.subtasks.filter(s => s.id !== subId);
-    openDescriptions.delete(`${todoId}:${subId}`);
-    render();
+    renderChangedTodos(removeTodoItem(subId, todoId));
   } catch (error) {
+    forgetLocalDelete(subId);
     await restoreCloudState(error);
   }
 }
@@ -169,30 +343,33 @@ async function deleteTodo(id) {
   item.classList.add('removing');
   await new Promise(resolve => setTimeout(resolve, 300));
 
+  const todo = todos.find(item => item.id === id);
+  const deletedIds = [id, ...(todo?.subtasks.map(subtask => subtask.id) || [])];
   try {
+    deletedIds.forEach(rememberLocalDelete);
     await deleteTodoRecord(id);
-    todos = todos.filter(t => t.id !== id);
-    for (const key of openDescriptions) {
-      if (key === id || key.startsWith(`${id}:`)) openDescriptions.delete(key);
-    }
-    render();
+    renderChangedTodos(removeTodoItem(id));
   } catch (error) {
+    deletedIds.forEach(forgetLocalDelete);
     await restoreCloudState(error);
   }
 }
 
 async function clearCompleted() {
   const doneIds = new Set(todos.filter(t => t.done).map(t => t.id));
+  const deletedIds = todos
+    .filter(todo => doneIds.has(todo.id))
+    .flatMap(todo => [todo.id, ...todo.subtasks.map(subtask => subtask.id)]);
   try {
+    deletedIds.forEach(rememberLocalDelete);
     await deleteTodoRecords([...doneIds]);
-    todos = todos.filter(t => !t.done);
-    // 清理已删除任务的描述展开状态
-    for (const key of openDescriptions) {
-      const id = key.split(':')[0];
-      if (doneIds.has(id)) openDescriptions.delete(key);
+    const affectedTodoIds = new Set();
+    for (const id of doneIds) {
+      for (const affectedId of removeTodoItem(id)) affectedTodoIds.add(affectedId);
     }
-    render();
+    renderChangedTodos(affectedTodoIds);
   } catch (error) {
+    deletedIds.forEach(forgetLocalDelete);
     await restoreCloudState(error);
   }
 }
@@ -209,11 +386,11 @@ async function toggleDescription(todoId, subId) {
 
   const descriptionOpen = !openDescriptions.has(key);
   try {
-    await updateTodoRecord(target.id, { descriptionOpen });
+    await updateTodoWithRealtimeEcho(target.id, { descriptionOpen });
     target.descriptionOpen = descriptionOpen;
     if (descriptionOpen) openDescriptions.add(key);
     else openDescriptions.delete(key);
-    render();
+    renderChangedTodos(new Set([todoId]));
   } catch (error) {
     await restoreCloudState(error);
   }
@@ -260,13 +437,13 @@ function startEditDescription(todoId, subId) {
       const changes = { description: newDesc };
       // 清空描述时同时收起，避免渲染空框
       if (!newDesc) changes.descriptionOpen = false;
-      await updateTodoRecord(target.id, changes);
+      await updateTodoWithRealtimeEcho(target.id, changes);
       target.description = newDesc;
       if (!newDesc) {
         target.descriptionOpen = false;
         openDescriptions.delete(key);
       }
-      render();
+      renderChangedTodos(new Set([todoId]));
     } catch (error) {
       await restoreCloudState(error);
     }
@@ -276,7 +453,7 @@ function startEditDescription(todoId, subId) {
   textarea.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       saved = true; // 阻止 blur 保存
-      render(); // 重新渲染恢复原始内容
+      renderChangedTodos(new Set([todoId]));
       return;
     }
 
@@ -375,117 +552,177 @@ function escapeHtml(str) {
 // 渲染引擎
 // ============================================================
 
-function render() {
-  const filtered = todos.filter(t => {
-    if (currentFilter === 'active') return !t.done;
-    if (currentFilter === 'completed') return t.done;
-    return true;
-  });
+function isTodoVisible(todo) {
+  if (currentFilter === 'active') return !todo.done;
+  if (currentFilter === 'completed') return todo.done;
+  return true;
+}
 
-  if (filtered.length === 0) {
-    const icon = todos.length === 0 ? '🚀' : '🎉';
-    const title = todos.length === 0 ? '准备好开始了吗？' : '全部搞定！';
-    const desc = todos.length === 0 ? '添加你的第一个任务吧' : '你太棒了，继续保持！';
-    list.innerHTML = `
-      <li class="empty-state">
-        <div class="empty-icon">${icon}</div>
-        <h3>${title}</h3>
-        <p>${desc}</p>
-      </li>`;
-  } else {
-    list.innerHTML = filtered.map(t => {
-      const subtaskCount = t.subtasks.length;
-      const doneCount = t.subtasks.filter(s => s.done).length;
-      const subProgress = subtaskCount > 0
-        ? Math.round((doneCount / subtaskCount) * 100)
-        : 0;
+function getVisibleTodos() {
+  return todos.filter(isTodoVisible);
+}
 
-      const subAddRowHtml = `
-          <div class="subtask-add-row" id="sub-add-${t.id}" style="display:none;">
-            <input type="text" placeholder="输入子任务内容，回车确认" data-action="sub-input" data-todo-id="${t.id}" />
-            <button class="sub-confirm" data-action="confirm-sub" data-todo-id="${t.id}">添加</button>
-          </div>`;
+function getEmptyStateHtml() {
+  const icon = todos.length === 0 ? '🚀' : '🎉';
+  const title = todos.length === 0 ? '准备好开始了吗？' : '全部搞定！';
+  const desc = todos.length === 0 ? '添加你的第一个任务吧' : '你太棒了，继续保持！';
+  return `
+    <li class="empty-state">
+      <div class="empty-icon">${icon}</div>
+      <h3>${title}</h3>
+      <p>${desc}</p>
+    </li>`;
+}
 
-      const subtasksHtml = subtaskCount > 0 ? `
-        <div class="subtask-section ${t.collapsed ? 'collapsed' : ''}">
-          <ul class="subtask-list">
-            ${t.subtasks.map(s => `
-              <li class="subtask-item ${s.done ? 'done' : ''}" data-todo-id="${t.id}" data-id="${s.id}" draggable="true">
-                <div class="subtask-main">
-                  <span class="subtask-drag-handle" title="拖拽排序">⋮⋮</span>
-                  <div class="subtask-checkbox" data-action="toggle-sub" data-todo-id="${t.id}" data-sub-id="${s.id}">
-                    <svg viewBox="0 0 16 16"><polyline points="2 8 6 12 14 4" /></svg>
-                  </div>
-                  <span class="subtask-text">${escapeHtml(s.text)}</span>
-                  <button class="subtask-desc-btn ${s.description ? 'has-desc' : ''}" data-action="toggle-desc" data-todo-id="${t.id}" data-sub-id="${s.id}" title="详情描述">
-                    <svg class="desc-icon" viewBox="0 0 16 16" width="12" height="12" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v7a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 11.5v-7z"/>
-                      <path d="M5.5 6.5h5M5.5 9h3.5"/>
-                    </svg>
-                  </button>
-                  <span class="subtask-time">${formatTime(s.createdAt)}${s.done && s.completedAt ? ' · ' + formatTime(s.completedAt) : ''}</span>
-                  <button class="subtask-delete" data-action="delete-sub" data-todo-id="${t.id}" data-sub-id="${s.id}" title="删除">×</button>
-                </div>
-                ${s.description || openDescriptions.has(t.id + ':' + s.id) ? `<div class="subtask-desc-section" data-todo-id="${t.id}" data-sub-id="${s.id}" style="display: ${openDescriptions.has(t.id + ':' + s.id) ? 'block' : 'none'};">
-                  <div class="desc-display">${s.description ? escapeHtml(s.description) : ''}</div>
-                </div>` : ''}
-              </li>
-            `).join('')}
-          </ul>
-          <div class="subtask-progress">
-            <div class="subtask-bar-bg">
-              <div class="subtask-bar-fill" style="width: ${subProgress}%"></div>
-            </div>
-            <span class="subtask-count"><span class="done-count">${doneCount}</span>/${subtaskCount}</span>
-          </div>
-          ${subAddRowHtml}
-        </div>
-      ` : `
-        <div class="subtask-section">
-          ${subAddRowHtml}
-        </div>
-      `;
+function renderTodoHtml(t) {
+  const subtaskCount = t.subtasks.length;
+  const doneCount = t.subtasks.filter(s => s.done).length;
+  const subProgress = subtaskCount > 0
+    ? Math.round((doneCount / subtaskCount) * 100)
+    : 0;
 
-      return `
-        <li class="todo-item ${t.done ? 'done' : ''}" data-id="${t.id}" draggable="true">
-          <div class="todo-main">
-            <span class="drag-handle" title="拖拽排序">⋮⋮</span>
-            <div class="checkbox" data-action="toggle">
-              <svg viewBox="0 0 16 16"><polyline points="2 8 6 12 14 4" /></svg>
-            </div>
-            ${subtaskCount > 0 ? `<span class="collapse-toggle" data-action="toggle-collapse" data-id="${t.id}" title="${t.collapsed ? '展开子任务' : '折叠子任务'}">
-              <svg class="collapse-chevron ${t.collapsed ? 'collapsed' : ''}" viewBox="0 0 12 12"><polyline points="2,3 6,8 10,3" /></svg>
-            </span>` : ''}
-            <div class="todo-body">
-              <div class="todo-text">${t.collapsed && subtaskCount > 0 ? `<span class="progress-badge">${doneCount}/${subtaskCount}</span>` : ''}${escapeHtml(t.text)}</div>
-              <div class="task-time">创建于 ${formatTime(t.createdAt)}${t.done && t.completedAt ? ' · 完成于 ' + formatTime(t.completedAt) : ''}</div>
-              ${t.description || openDescriptions.has(t.id) ? `<div class="desc-section" data-id="${t.id}" style="display: ${openDescriptions.has(t.id) ? 'block' : 'none'};">
-                <div class="desc-display">${t.description ? escapeHtml(t.description) : ''}</div>
-              </div>` : ''}
-              ${subtasksHtml}
-            </div>
-            <div class="todo-actions">
-              <button class="action-btn sub-add-action" data-action="show-sub-add" data-todo-id="${t.id}" title="添加子任务">+</button>
-              <button class="action-btn edit-btn" data-action="start-edit" data-id="${t.id}" title="编辑标题">✎</button>
-              <button class="action-btn desc-btn ${t.description ? 'has-desc' : ''} ${openDescriptions.has(t.id) ? 'desc-open' : ''}" data-action="toggle-desc" data-id="${t.id}" title="详情描述">
-                <svg class="desc-chevron" viewBox="0 0 12 12" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="2,3 6,8 10,3"/>
+  const subAddRowHtml = `
+      <div class="subtask-add-row" id="sub-add-${t.id}" style="display:none;">
+        <input type="text" placeholder="输入子任务内容，回车确认" data-action="sub-input" data-todo-id="${t.id}" />
+        <button class="sub-confirm" data-action="confirm-sub" data-todo-id="${t.id}">添加</button>
+      </div>`;
+
+  const subtasksHtml = subtaskCount > 0 ? `
+    <div class="subtask-section ${t.collapsed ? 'collapsed' : ''}">
+      <ul class="subtask-list">
+        ${t.subtasks.map(s => `
+          <li class="subtask-item ${s.done ? 'done' : ''}" data-todo-id="${t.id}" data-id="${s.id}" draggable="true">
+            <div class="subtask-main">
+              <span class="subtask-drag-handle" title="拖拽排序">⋮⋮</span>
+              <div class="subtask-checkbox" data-action="toggle-sub" data-todo-id="${t.id}" data-sub-id="${s.id}">
+                <svg viewBox="0 0 16 16"><polyline points="2 8 6 12 14 4" /></svg>
+              </div>
+              <span class="subtask-text">${escapeHtml(s.text)}</span>
+              <button class="subtask-desc-btn ${s.description ? 'has-desc' : ''}" data-action="toggle-desc" data-todo-id="${t.id}" data-sub-id="${s.id}" title="详情描述">
+                <svg class="desc-icon" viewBox="0 0 16 16" width="12" height="12" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v7a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 11.5v-7z"/>
+                  <path d="M5.5 6.5h5M5.5 9h3.5"/>
                 </svg>
               </button>
-              <button class="action-btn" data-action="delete" data-id="${t.id}" title="删除">✕</button>
+              <span class="subtask-time">${formatTime(s.createdAt)}${s.done && s.completedAt ? ' · ' + formatTime(s.completedAt) : ''}</span>
+              <button class="subtask-delete" data-action="delete-sub" data-todo-id="${t.id}" data-sub-id="${s.id}" title="删除">×</button>
             </div>
-          </div>
-        </li>
-      `;
-    }).join('');
-  }
+            ${s.description || openDescriptions.has(t.id + ':' + s.id) ? `<div class="subtask-desc-section" data-todo-id="${t.id}" data-sub-id="${s.id}" style="display: ${openDescriptions.has(t.id + ':' + s.id) ? 'block' : 'none'};">
+              <div class="desc-display">${s.description ? escapeHtml(s.description) : ''}</div>
+            </div>` : ''}
+          </li>
+        `).join('')}
+      </ul>
+      <div class="subtask-progress">
+        <div class="subtask-bar-bg">
+          <div class="subtask-bar-fill" style="width: ${subProgress}%"></div>
+        </div>
+        <span class="subtask-count"><span class="done-count">${doneCount}</span>/${subtaskCount}</span>
+      </div>
+      ${subAddRowHtml}
+    </div>
+  ` : `
+    <div class="subtask-section">
+      ${subAddRowHtml}
+    </div>
+  `;
 
+  return `
+    <li class="todo-item ${t.done ? 'done' : ''}" data-id="${t.id}" draggable="true">
+      <div class="todo-main">
+        <span class="drag-handle" title="拖拽排序">⋮⋮</span>
+        <div class="checkbox" data-action="toggle">
+          <svg viewBox="0 0 16 16"><polyline points="2 8 6 12 14 4" /></svg>
+        </div>
+        ${subtaskCount > 0 ? `<span class="collapse-toggle" data-action="toggle-collapse" data-id="${t.id}" title="${t.collapsed ? '展开子任务' : '折叠子任务'}">
+          <svg class="collapse-chevron ${t.collapsed ? 'collapsed' : ''}" viewBox="0 0 12 12"><polyline points="2,3 6,8 10,3" /></svg>
+        </span>` : ''}
+        <div class="todo-body">
+          <div class="todo-text">${t.collapsed && subtaskCount > 0 ? `<span class="progress-badge">${doneCount}/${subtaskCount}</span>` : ''}${escapeHtml(t.text)}</div>
+          <div class="task-time">创建于 ${formatTime(t.createdAt)}${t.done && t.completedAt ? ' · 完成于 ' + formatTime(t.completedAt) : ''}</div>
+          ${t.description || openDescriptions.has(t.id) ? `<div class="desc-section" data-id="${t.id}" style="display: ${openDescriptions.has(t.id) ? 'block' : 'none'};">
+            <div class="desc-display">${t.description ? escapeHtml(t.description) : ''}</div>
+          </div>` : ''}
+          ${subtasksHtml}
+        </div>
+        <div class="todo-actions">
+          <button class="action-btn sub-add-action" data-action="show-sub-add" data-todo-id="${t.id}" title="添加子任务">+</button>
+          <button class="action-btn edit-btn" data-action="start-edit" data-id="${t.id}" title="编辑标题">✎</button>
+          <button class="action-btn desc-btn ${t.description ? 'has-desc' : ''} ${openDescriptions.has(t.id) ? 'desc-open' : ''}" data-action="toggle-desc" data-id="${t.id}" title="详情描述">
+            <svg class="desc-chevron" viewBox="0 0 12 12" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="2,3 6,8 10,3"/>
+            </svg>
+          </button>
+          <button class="action-btn" data-action="delete" data-id="${t.id}" title="删除">✕</button>
+        </div>
+      </div>
+    </li>
+  `;
+}
+
+function createTodoElement(todo) {
+  const template = document.createElement('template');
+  template.innerHTML = renderTodoHtml(todo).trim();
+  return template.content.firstElementChild;
+}
+
+function getTodoElement(id) {
+  return [...list.children].find(element => (
+    element.classList.contains('todo-item') && element.dataset.id === id
+  ));
+}
+
+function updateListSummary() {
   const activeCount = todos.filter(t => !t.done).length;
   const total = todos.length;
   countText.textContent = total === 0 ? '暂无任务' : `待办 ${activeCount} · 共 ${total} 个`;
   clearBtn.style.display = todos.some(t => t.done) ? 'inline-block' : 'none';
   updateProgress();
   updateSideStats();
+}
+
+function render() {
+  const visibleTodos = getVisibleTodos();
+  list.innerHTML = visibleTodos.length > 0
+    ? visibleTodos.map(renderTodoHtml).join('')
+    : getEmptyStateHtml();
+  updateListSummary();
+}
+
+function renderChangedTodos(todoIds) {
+  const visibleTodos = getVisibleTodos();
+  if (visibleTodos.length === 0) {
+    list.innerHTML = getEmptyStateHtml();
+    updateListSummary();
+    return;
+  }
+
+  list.querySelector(':scope > .empty-state')?.remove();
+  for (const id of todoIds) {
+    const existing = getTodoElement(id);
+    const todo = todos.find(item => item.id === id);
+    if (!todo || !isTodoVisible(todo)) {
+      existing?.remove();
+      continue;
+    }
+
+    const replacement = createTodoElement(todo);
+    if (existing) existing.replaceWith(replacement);
+    else list.appendChild(replacement);
+  }
+
+  for (const todo of visibleTodos) {
+    if (!getTodoElement(todo.id)) list.appendChild(createTodoElement(todo));
+  }
+
+  let nextElement = list.firstElementChild;
+  for (const todo of visibleTodos) {
+    const element = getTodoElement(todo.id);
+    if (element !== nextElement) list.insertBefore(element, nextElement);
+    nextElement = element.nextElementSibling;
+  }
+
+  updateListSummary();
 }
 
 // ============================================================
@@ -500,6 +737,7 @@ function startEditTitle(id) {
 
   textEl.contentEditable = 'true';
   textEl.classList.add('editing');
+  textEl.querySelector('.progress-badge')?.remove();
   textEl.focus();
 
   // 选中全部文字
@@ -511,26 +749,58 @@ function startEditTitle(id) {
 
   const originalText = t.text;
   let cancelled = false;
+  let finishing = false;
+
+  const restoreProgressBadge = () => {
+    if (!t.collapsed || t.subtasks.length === 0 || textEl.querySelector('.progress-badge')) return;
+    const doneCount = t.subtasks.filter(subtask => subtask.done).length;
+    const badge = document.createElement('span');
+    badge.className = 'progress-badge';
+    badge.textContent = `${doneCount}/${t.subtasks.length}`;
+    textEl.prepend(badge);
+  };
+
   const finish = async () => {
+    if (finishing) return;
+    finishing = true;
     const newText = textEl.textContent.trim();
-    if (!cancelled && newText && newText !== originalText) {
-      try {
-        await updateTodoRecord(id, { text: newText });
-        t.text = newText;
-      } catch (error) {
-        await restoreCloudState(error);
-        return;
-      }
-    }
     textEl.contentEditable = 'false';
     textEl.classList.remove('editing');
-    render();
+
+    if (cancelled || !newText) {
+      textEl.textContent = originalText;
+      restoreProgressBadge();
+      return;
+    }
+    if (newText === originalText) {
+      restoreProgressBadge();
+      return;
+    }
+
+    t.text = newText;
+    restoreProgressBadge();
+    try {
+      await updateTodoWithRealtimeEcho(id, { text: newText });
+    } catch (error) {
+      t.text = originalText;
+      if (textEl.isConnected) {
+        textEl.textContent = originalText;
+        restoreProgressBadge();
+      }
+      await restoreCloudState(error);
+    }
   };
 
   textEl.addEventListener('blur', finish, { once: true });
   textEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); textEl.blur(); }
+    if (e.key === 'Enter' && !e.isComposing) {
+      e.preventDefault();
+      e.stopPropagation();
+      textEl.blur();
+    }
     if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
       cancelled = true;
       textEl.textContent = originalText;
       textEl.blur();
@@ -558,26 +828,40 @@ function startEditSubtask(todoId, subId) {
 
   const originalText = sub.text;
   let cancelled = false;
+  let finishing = false;
   const finish = async () => {
+    if (finishing) return;
+    finishing = true;
     const newText = textEl.textContent.trim();
-    if (!cancelled && newText && newText !== originalText) {
-      try {
-        await updateTodoRecord(subId, { text: newText });
-        sub.text = newText;
-      } catch (error) {
-        await restoreCloudState(error);
-        return;
-      }
-    }
     textEl.contentEditable = 'false';
     textEl.classList.remove('editing');
-    render();
+
+    if (cancelled || !newText) {
+      textEl.textContent = originalText;
+      return;
+    }
+    if (newText === originalText) return;
+
+    sub.text = newText;
+    try {
+      await updateTodoWithRealtimeEcho(subId, { text: newText });
+    } catch (error) {
+      sub.text = originalText;
+      if (textEl.isConnected) textEl.textContent = originalText;
+      await restoreCloudState(error);
+    }
   };
 
   textEl.addEventListener('blur', finish, { once: true });
   textEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); textEl.blur(); }
+    if (e.key === 'Enter' && !e.isComposing) {
+      e.preventDefault();
+      e.stopPropagation();
+      textEl.blur();
+    }
     if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
       cancelled = true;
       textEl.textContent = originalText;
       textEl.blur();
@@ -686,7 +970,7 @@ list.addEventListener('drop', async (e) => {
 
     render();
     try {
-      await saveTodoPositions();
+      await saveTodoPositions(updateTodoWithRealtimeEcho);
     } catch (error) {
       await restoreCloudState(error);
     }
@@ -710,7 +994,7 @@ list.addEventListener('drop', async (e) => {
 
   render();
   try {
-    await saveTodoPositions();
+    await saveTodoPositions(updateTodoWithRealtimeEcho);
   } catch (error) {
     await restoreCloudState(error);
   }
@@ -765,10 +1049,10 @@ list.addEventListener('click', (e) => {
     const t = todos.find(t => t.id === actionEl.dataset.id);
     if (t) {
       const collapsed = !t.collapsed;
-      updateTodoRecord(t.id, { collapsed })
+      updateTodoWithRealtimeEcho(t.id, { collapsed })
         .then(() => {
           t.collapsed = collapsed;
-          render();
+          renderChangedTodos(new Set([t.id]));
         })
         .catch(restoreCloudState);
     }
@@ -802,7 +1086,8 @@ list.addEventListener('dblclick', (e) => {
 
 // 子任务输入框回车确认
 list.addEventListener('keydown', (e) => {
-  if (e.target.dataset.action === 'sub-input' && e.key === 'Enter') {
+  if (e.target.dataset.action === 'sub-input' && e.key === 'Enter' && !e.isComposing) {
+    e.preventDefault();
     e.stopPropagation();
     const todoId = e.target.dataset.todoId;
     if (e.target.value.trim()) addSubtask(todoId, e.target.value);
@@ -836,7 +1121,10 @@ list.addEventListener('click', (e) => {
 
 addBtn.addEventListener('click', addTodo);
 input.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') addTodo();
+  if (e.key === 'Enter' && !e.isComposing) {
+    e.preventDefault();
+    addTodo();
+  }
 });
 
 // 过滤按钮
@@ -892,11 +1180,50 @@ function setDailyQuote() {
 // 启动
 // ============================================================
 
+function normalizeRealtimeTodoChange(event, message) {
+  const payload = message?.payload || message;
+  const row = event === 'DELETE'
+    ? (payload?.old_record || payload?.record)
+    : payload?.record;
+  if (!row?.id) return null;
+  return { event, item: mapRow(row) };
+}
+
+function handleRealtimeTodoChange(event, message) {
+  try {
+    const change = normalizeRealtimeTodoChange(event, message);
+    if (!change) {
+      scheduleRealtimeRefresh();
+      return;
+    }
+
+    const { item } = change;
+    if (item.userId && item.userId !== activeUserId) return;
+    if (event === 'UPDATE' && consumeRealtimeEcho(item)) return;
+    if (event === 'INSERT' && consumeLocalCreate(item.id)) return;
+    if (event === 'DELETE' && consumeLocalDelete(item.id)) return;
+
+    const affectedTodoIds = event === 'DELETE'
+      ? removeTodoItem(item.id, item.parentId)
+      : upsertTodoItem(item);
+    if (!affectedTodoIds) {
+      scheduleRealtimeRefresh();
+      return;
+    }
+    renderChangedTodos(affectedTodoIds);
+  } catch (error) {
+    console.error('实时同步局部更新失败:', error);
+    scheduleRealtimeRefresh();
+  }
+}
+
 function scheduleRealtimeRefresh() {
   clearTimeout(realtimeRefreshTimer);
+  const expectedUserId = activeUserId;
   realtimeRefreshTimer = setTimeout(async () => {
     try {
       await loadTodos();
+      if (activeUserId !== expectedUserId) return;
       openDescriptions = loadOpenDescriptions(todos);
       render();
     } catch (error) {
@@ -927,7 +1254,7 @@ async function startTodoApp(user) {
     if (sessionVersion !== appSessionVersion || activeUserId !== user.id) return;
     openDescriptions = loadOpenDescriptions(todos);
     render();
-    todoChannel = await subscribeTodoChanges(user.id, scheduleRealtimeRefresh);
+    todoChannel = await subscribeTodoChanges(user.id, handleRealtimeTodoChange);
   } catch (error) {
     if (sessionVersion !== appSessionVersion) return;
     showCloudError(error);
@@ -939,6 +1266,9 @@ function stopTodoApp() {
   appSessionVersion += 1;
   activeUserId = null;
   clearTimeout(realtimeRefreshTimer);
+  pendingRealtimeEchoes.clear();
+  recentLocalCreates.clear();
+  recentLocalDeletes.clear();
   unsubscribeTodoChanges(todoChannel);
   todoChannel = null;
   setCurrentUser(null);

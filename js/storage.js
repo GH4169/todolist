@@ -158,13 +158,15 @@ async function deleteTodoRecords(ids) {
 }
 
 /** 持久化当前父任务及子任务的拖拽顺序。 */
-async function saveTodoPositions() {
+async function saveTodoPositions(updateRecord = updateTodoRecord) {
   const updates = [];
 
   todos.forEach((todo, position) => {
-    updates.push(updateTodoRecord(todo.id, { position }));
+    todo.position = position;
+    updates.push(updateRecord(todo.id, { position }));
     todo.subtasks.forEach((subtask, subPosition) => {
-      updates.push(updateTodoRecord(subtask.id, { position: subPosition }));
+      subtask.position = subPosition;
+      updates.push(updateRecord(subtask.id, { position: subPosition }));
     });
   });
 
@@ -194,9 +196,9 @@ async function subscribeTodoChanges(userId, onChange) {
   await supabaseClient.realtime.setAuth();
   return supabaseClient
     .channel(`todos:${userId}`, { config: { private: true } })
-    .on('broadcast', { event: 'INSERT' }, onChange)
-    .on('broadcast', { event: 'UPDATE' }, onChange)
-    .on('broadcast', { event: 'DELETE' }, onChange)
+    .on('broadcast', { event: 'INSERT' }, message => onChange('INSERT', message))
+    .on('broadcast', { event: 'UPDATE' }, message => onChange('UPDATE', message))
+    .on('broadcast', { event: 'DELETE' }, message => onChange('DELETE', message))
     .subscribe();
 }
 
