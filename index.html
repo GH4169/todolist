@@ -12,13 +12,37 @@
   <div class="bg-glow glow-2"></div>
   <div class="particles" id="particles"></div>
 
-  <div class="app-layout">
+  <main class="auth-view" id="authView">
+    <section class="auth-panel" aria-labelledby="authTitle">
+      <div class="auth-brand">
+        <h1 id="authTitle">Todolist</h1>
+        <p>登录你的工作空间</p>
+      </div>
+      <form class="auth-form" id="authForm">
+        <label for="authEmail">邮箱</label>
+        <input id="authEmail" name="email" type="email" autocomplete="email" required placeholder="name@company.com">
+        <label for="authPassword">密码</label>
+        <input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="6" required placeholder="至少 6 位密码">
+        <div class="auth-actions">
+          <button class="auth-primary" id="loginBtn" type="submit">登录</button>
+          <button class="auth-secondary" id="registerBtn" type="button">注册</button>
+        </div>
+        <p class="auth-message" id="authMessage" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+  </main>
+
+  <div class="app-layout" id="appView" hidden>
     <div class="app-inner">
       <!-- 主列 -->
       <div class="main-col">
         <div class="header">
           <h1>Todolist</h1>
           <p class="subtitle">任务管理，简约高效</p>
+          <div class="user-session">
+            <span id="userEmail"></span>
+            <button id="logoutBtn" type="button">退出登录</button>
+          </div>
         </div>
 
         <!-- 进度环 -->
@@ -161,5 +185,6 @@
   <script src="js/storage.js"></script>
   <script src="js/theme.js"></script>
   <script src="js/main.js"></script>
+  <script src="js/auth.js"></script>
 </body>
 </html>

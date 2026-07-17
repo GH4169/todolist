@@ -7,14 +7,25 @@ const SUPABASE_ANON_KEY = 'sb_publishable_CvJ8Fw0wcuvx_ND7BG6H7A_yVqG9xoc';
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
-    persistSession: false,
-    autoRefreshToken: false,
-    detectSessionInUrl: false,
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
   },
 });
 
 // main.js 使用的内存视图；Supabase 是唯一的任务持久化数据源。
 let todos = [];
+let currentUserId = null;
+
+function setCurrentUser(user) {
+  currentUserId = user?.id || null;
+  todos = [];
+}
+
+function requireCurrentUserId() {
+  if (!currentUserId) throw new Error('请先登录后再操作任务');
+  return currentUserId;
+}
 
 function parseTime(value) {
   return value ? new Date(value).getTime() : null;
@@ -23,6 +34,7 @@ function parseTime(value) {
 function mapRow(row) {
   return {
     id: row.id,
+    userId: row.user_id,
     parentId: row.parent_id,
     text: row.text,
     done: row.is_completed,
@@ -62,9 +74,11 @@ function toDatabaseChanges(changes) {
 
 /** 从云端读取所有任务，并组装为父任务/子任务结构。 */
 async function loadTodos() {
+  const userId = requireCurrentUserId();
   const { data, error } = await supabaseClient
     .from('todos')
     .select('*')
+    .eq('user_id', userId)
     .order('position', { ascending: true })
     .order('created_at', { ascending: true });
 
@@ -86,10 +100,12 @@ async function loadTodos() {
 
 /** 新增父任务或子任务，并返回服务器生成 ID 后的完整记录。 */
 async function createTodoRecord({ text, parentId = null, position = 0 }) {
+  const userId = requireCurrentUserId();
   const { data, error } = await supabaseClient
     .from('todos')
     .insert({
       text,
+      user_id: userId,
       parent_id: parentId,
       position,
     })
@@ -102,10 +118,12 @@ async function createTodoRecord({ text, parentId = null, position = 0 }) {
 
 /** 更新一条父任务或子任务。 */
 async function updateTodoRecord(id, changes) {
+  const userId = requireCurrentUserId();
   const { data, error } = await supabaseClient
     .from('todos')
     .update(toDatabaseChanges(changes))
     .eq('id', id)
+    .eq('user_id', userId)
     .select()
     .single();
 
@@ -115,10 +133,12 @@ async function updateTodoRecord(id, changes) {
 
 /** 删除一条记录；删除父任务时，数据库外键会级联删除其子任务。 */
 async function deleteTodoRecord(id) {
+  const userId = requireCurrentUserId();
   const { error } = await supabaseClient
     .from('todos')
     .delete()
-    .eq('id', id);
+    .eq('id', id)
+    .eq('user_id', userId);
 
   if (error) throw error;
 }
@@ -127,9 +147,11 @@ async function deleteTodoRecord(id) {
 async function deleteTodoRecords(ids) {
   if (ids.length === 0) return;
 
+  const userId = requireCurrentUserId();
   const { error } = await supabaseClient
     .from('todos')
     .delete()
+    .eq('user_id', userId)
     .in('id', ids);
 
   if (error) throw error;
@@ -163,15 +185,18 @@ function loadOpenDescriptions(items) {
   return open;
 }
 
-/** 监听其他设备的增删改，并由 main.js 重新拉取最新数据。 */
-function subscribeTodoChanges(onChange) {
+/** 通过当前用户的私有 Broadcast 频道监听增删改。 */
+async function subscribeTodoChanges(userId, onChange) {
+  if (!userId || userId !== currentUserId) {
+    throw new Error('无法为未登录用户订阅任务');
+  }
+
+  await supabaseClient.realtime.setAuth();
   return supabaseClient
-    .channel('todos-cloud-sync')
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'todos' },
-      onChange,
-    )
+    .channel(`todos:${userId}`, { config: { private: true } })
+    .on('broadcast', { event: 'INSERT' }, onChange)
+    .on('broadcast', { event: 'UPDATE' }, onChange)
+    .on('broadcast', { event: 'DELETE' }, onChange)
     .subscribe();
 }
 

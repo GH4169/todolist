@@ -21,6 +21,8 @@ let currentFilter = 'all';
 let openDescriptions = new Set();
 let todoChannel = null;
 let realtimeRefreshTimer = null;
+let activeUserId = null;
+let appSessionVersion = 0;
 
 // ---- 激励语池 ----
 const quotes = [
@@ -903,24 +905,45 @@ function scheduleRealtimeRefresh() {
   }, 150);
 }
 
-async function initApp() {
+function initAppShell() {
   createParticles();
   setDailyQuote();
   updateDateTime();
   setInterval(updateDateTime, 1000);
   initTheme();
+}
+
+async function startTodoApp(user) {
+  if (!user || activeUserId === user.id) return;
+
+  stopTodoApp();
+  const sessionVersion = ++appSessionVersion;
+  activeUserId = user.id;
+  setCurrentUser(user);
 
   list.innerHTML = '<li class="empty-state"><p>正在从云端加载...</p></li>';
   try {
     await loadTodos();
+    if (sessionVersion !== appSessionVersion || activeUserId !== user.id) return;
     openDescriptions = loadOpenDescriptions(todos);
     render();
-    todoChannel = subscribeTodoChanges(scheduleRealtimeRefresh);
+    todoChannel = await subscribeTodoChanges(user.id, scheduleRealtimeRefresh);
   } catch (error) {
+    if (sessionVersion !== appSessionVersion) return;
     showCloudError(error);
     list.innerHTML = '<li class="empty-state"><p>云端数据加载失败，请检查建表语句与网络连接。</p></li>';
   }
 }
 
+function stopTodoApp() {
+  appSessionVersion += 1;
+  activeUserId = null;
+  clearTimeout(realtimeRefreshTimer);
+  unsubscribeTodoChanges(todoChannel);
+  todoChannel = null;
+  setCurrentUser(null);
+  openDescriptions = new Set();
+}
+
 window.addEventListener('beforeunload', () => unsubscribeTodoChanges(todoChannel));
-initApp();
+initAppShell();

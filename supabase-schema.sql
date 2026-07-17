@@ -3,7 +3,8 @@ create extension if not exists pgcrypto;
 
 create table if not exists public.todos (
   id uuid primary key default gen_random_uuid(),
-  parent_id uuid references public.todos(id) on delete cascade,
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  parent_id uuid,
   text text not null check (length(trim(text)) > 0),
   description text not null default '',
   is_completed boolean not null default false,
@@ -13,11 +14,14 @@ create table if not exists public.todos (
   created_at timestamptz not null default now(),
   completed_at timestamptz,
   updated_at timestamptz not null default now(),
-  constraint todos_cannot_parent_itself check (parent_id is null or parent_id <> id)
+  constraint todos_cannot_parent_itself check (parent_id is null or parent_id <> id),
+  constraint todos_id_user_id_key unique (id, user_id),
+  constraint todos_parent_owner_fkey foreign key (parent_id, user_id)
+    references public.todos(id, user_id) on delete cascade
 );
 
-create index if not exists todos_parent_position_idx
-  on public.todos(parent_id, position);
+create index if not exists todos_user_parent_position_idx
+  on public.todos(user_id, parent_id, position);
 
 create index if not exists todos_completed_idx
   on public.todos(is_completed);
@@ -38,20 +42,78 @@ create trigger set_todos_updated_at
 before update on public.todos
 for each row execute function public.set_todos_updated_at();
 
--- RLS 已关闭时，显式允许浏览器 publishable/anon key 执行 CRUD。
-grant select, insert, update, delete on table public.todos to anon, authenticated;
+alter table public.todos enable row level security;
 
--- 启用 Postgres Changes，供页面进行跨设备实时刷新。
+revoke all privileges on table public.todos from anon;
+revoke all privileges on table public.todos from public;
+grant select, insert, update, delete on table public.todos to authenticated;
+
+drop policy if exists "Users can view own todos" on public.todos;
+drop policy if exists "Users can create own todos" on public.todos;
+drop policy if exists "Users can update own todos" on public.todos;
+drop policy if exists "Users can delete own todos" on public.todos;
+
+create policy "Users can view own todos"
+on public.todos for select to authenticated
+using (user_id = (select auth.uid()));
+
+create policy "Users can create own todos"
+on public.todos for insert to authenticated
+with check (user_id = (select auth.uid()));
+
+create policy "Users can update own todos"
+on public.todos for update to authenticated
+using (user_id = (select auth.uid()))
+with check (user_id = (select auth.uid()));
+
+create policy "Users can delete own todos"
+on public.todos for delete to authenticated
+using (user_id = (select auth.uid()));
+
+create or replace function public.broadcast_todo_changes()
+returns trigger
+security definer
+language plpgsql
+set search_path = ''
+as $$
+begin
+  perform realtime.broadcast_changes(
+    'todos:' || coalesce(new.user_id, old.user_id)::text,
+    tg_op,
+    tg_op,
+    tg_table_name,
+    tg_table_schema,
+    new,
+    old
+  );
+  return null;
+end;
+$$;
+
+drop trigger if exists broadcast_todo_changes on public.todos;
+create trigger broadcast_todo_changes
+after insert or update or delete on public.todos
+for each row execute function public.broadcast_todo_changes();
+
+drop policy if exists "Users can receive own todo broadcasts" on realtime.messages;
+create policy "Users can receive own todo broadcasts"
+on realtime.messages for select to authenticated
+using (
+  realtime.messages.extension = 'broadcast'
+  and (select realtime.topic()) = 'todos:' || (select auth.uid())::text
+);
+
+-- 私有 Broadcast 负责实时同步，避免不可过滤的 Postgres Changes DELETE 事件。
 do $$
 begin
-  if not exists (
+  if exists (
     select 1
     from pg_publication_tables
     where pubname = 'supabase_realtime'
       and schemaname = 'public'
       and tablename = 'todos'
   ) then
-    alter publication supabase_realtime add table public.todos;
+    alter publication supabase_realtime drop table public.todos;
   end if;
 end
 $$;
