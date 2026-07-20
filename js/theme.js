@@ -33,7 +33,9 @@ function applyTheme(themeName) {
 
   // 同步更新侧边栏主题按钮的 active 状态
   document.querySelectorAll('.theme-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.theme === themeName);
+    const isActive = btn.dataset.theme === themeName;
+    btn.classList.toggle('active', isActive);
+    btn.setAttribute('aria-pressed', String(isActive));
   });
 }
 

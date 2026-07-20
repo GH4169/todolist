@@ -248,6 +248,11 @@ function syncTodoCompletionDom(todo) {
   if (!todoElement) return null;
 
   todoElement.classList.toggle('done', todo.done);
+  const checkbox = todoElement.querySelector('.checkbox');
+  if (checkbox) {
+    checkbox.setAttribute('aria-pressed', String(todo.done));
+    checkbox.setAttribute('aria-label', todo.done ? '标记为未完成' : '标记为已完成');
+  }
   const timeElement = todoElement.querySelector('.task-time');
   if (timeElement) {
     timeElement.textContent = `创建于 ${formatTime(todo.createdAt)}${todo.done && todo.completedAt ? ' · 完成于 ' + formatTime(todo.completedAt) : ''}`;
@@ -262,6 +267,11 @@ function syncSubtaskCompletionDom(todo, subtask) {
       .find(element => element.dataset.id === subtask.id);
     if (subtaskElement) {
       subtaskElement.classList.toggle('done', subtask.done);
+      const checkbox = subtaskElement.querySelector('.subtask-checkbox');
+      if (checkbox) {
+        checkbox.setAttribute('aria-pressed', String(subtask.done));
+        checkbox.setAttribute('aria-label', subtask.done ? '标记为未完成' : '标记为已完成');
+      }
       const timeElement = subtaskElement.querySelector('.subtask-time');
       if (timeElement) {
         timeElement.textContent = `${formatTime(subtask.createdAt)}${subtask.done && subtask.completedAt ? ' · ' + formatTime(subtask.completedAt) : ''}`;
@@ -739,9 +749,11 @@ function getVisibleTodos() {
 }
 
 function getEmptyStateHtml() {
-  const icon = todos.length === 0 ? '🚀' : '🎉';
+  const icon = todos.length === 0
+    ? '<svg viewBox="0 0 48 48" aria-hidden="true"><rect x="9" y="8" width="30" height="32" rx="5"/><path d="M16 18h16M16 25h10M16 32h7"/><path class="empty-accent" d="m29 31 3 3 7-8"/></svg>'
+    : '<svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="16"/><path class="empty-accent" d="m16 24 5 5 11-12"/></svg>';
   const title = todos.length === 0 ? '准备好开始了吗？' : '全部搞定！';
-  const desc = todos.length === 0 ? '添加你的第一个任务吧' : '你太棒了，继续保持！';
+  const desc = todos.length === 0 ? '从一件重要的小事开始' : '今天的清单已经完成';
   return `
     <li class="empty-state">
       <div class="empty-icon">${icon}</div>
@@ -760,7 +772,7 @@ function renderTodoHtml(t) {
   const subAddRowHtml = `
       <div class="subtask-add-row" id="sub-add-${t.id}" style="display:none;">
         <input type="text" placeholder="输入子任务内容，回车确认" data-action="sub-input" data-todo-id="${t.id}" />
-        <button class="sub-confirm" data-action="confirm-sub" data-todo-id="${t.id}">添加</button>
+        <button class="sub-confirm" type="button" data-action="confirm-sub" data-todo-id="${t.id}">添加</button>
       </div>`;
 
   const subtasksHtml = subtaskCount > 0 ? `
@@ -769,10 +781,10 @@ function renderTodoHtml(t) {
         ${t.subtasks.map(s => `
           <li class="subtask-item ${s.done ? 'done' : ''}" data-todo-id="${t.id}" data-id="${s.id}" draggable="true">
             <div class="subtask-main">
-              <span class="subtask-drag-handle" title="拖拽排序">⋮⋮</span>
-              <div class="subtask-checkbox" data-action="toggle-sub" data-todo-id="${t.id}" data-sub-id="${s.id}">
+              <span class="subtask-drag-handle" title="拖拽排序" aria-hidden="true"><svg viewBox="0 0 12 18"><circle cx="3" cy="4" r="1"/><circle cx="9" cy="4" r="1"/><circle cx="3" cy="9" r="1"/><circle cx="9" cy="9" r="1"/><circle cx="3" cy="14" r="1"/><circle cx="9" cy="14" r="1"/></svg></span>
+              <button class="subtask-checkbox" type="button" data-action="toggle-sub" data-todo-id="${t.id}" data-sub-id="${s.id}" aria-label="${s.done ? '标记为未完成' : '标记为已完成'}" aria-pressed="${s.done}">
                 <svg viewBox="0 0 16 16"><polyline points="2 8 6 12 14 4" /></svg>
-              </div>
+              </button>
               <span class="subtask-text">${escapeHtml(s.text)}</span>
               <button class="subtask-desc-btn ${s.description ? 'has-desc' : ''}" data-action="toggle-desc" data-todo-id="${t.id}" data-sub-id="${s.id}" title="详情描述">
                 <svg class="desc-icon" viewBox="0 0 16 16" width="12" height="12" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
@@ -781,7 +793,9 @@ function renderTodoHtml(t) {
                 </svg>
               </button>
               <span class="subtask-time">${formatTime(s.createdAt)}${s.done && s.completedAt ? ' · ' + formatTime(s.completedAt) : ''}</span>
-              <button class="subtask-delete" data-action="delete-sub" data-todo-id="${t.id}" data-sub-id="${s.id}" title="删除">×</button>
+              <button class="subtask-delete" type="button" data-action="delete-sub" data-todo-id="${t.id}" data-sub-id="${s.id}" title="删除子任务" aria-label="删除子任务">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+              </button>
             </div>
             ${s.description || openDescriptions.has(t.id + ':' + s.id) ? `<div class="subtask-desc-section" data-todo-id="${t.id}" data-sub-id="${s.id}" style="display: ${openDescriptions.has(t.id + ':' + s.id) ? 'block' : 'none'};">
               <div class="desc-display">${s.description ? escapeHtml(s.description) : ''}</div>
@@ -806,13 +820,13 @@ function renderTodoHtml(t) {
   return `
     <li class="todo-item ${t.done ? 'done' : ''}" data-id="${t.id}" draggable="true">
       <div class="todo-main">
-        <span class="drag-handle" title="拖拽排序">⋮⋮</span>
-        <div class="checkbox" data-action="toggle">
+        <span class="drag-handle" title="拖拽排序" aria-hidden="true"><svg viewBox="0 0 12 18"><circle cx="3" cy="4" r="1"/><circle cx="9" cy="4" r="1"/><circle cx="3" cy="9" r="1"/><circle cx="9" cy="9" r="1"/><circle cx="3" cy="14" r="1"/><circle cx="9" cy="14" r="1"/></svg></span>
+        <button class="checkbox" type="button" data-action="toggle" aria-label="${t.done ? '标记为未完成' : '标记为已完成'}" aria-pressed="${t.done}">
           <svg viewBox="0 0 16 16"><polyline points="2 8 6 12 14 4" /></svg>
-        </div>
-        ${subtaskCount > 0 ? `<span class="collapse-toggle" data-action="toggle-collapse" data-id="${t.id}" title="${t.collapsed ? '展开子任务' : '折叠子任务'}">
+        </button>
+        ${subtaskCount > 0 ? `<button class="collapse-toggle" type="button" data-action="toggle-collapse" data-id="${t.id}" title="${t.collapsed ? '展开子任务' : '折叠子任务'}" aria-label="${t.collapsed ? '展开子任务' : '折叠子任务'}" aria-expanded="${!t.collapsed}">
           <svg class="collapse-chevron ${t.collapsed ? 'collapsed' : ''}" viewBox="0 0 12 12"><polyline points="2,3 6,8 10,3" /></svg>
-        </span>` : ''}
+        </button>` : ''}
         <div class="todo-body">
           <div class="todo-text">${t.collapsed && subtaskCount > 0 ? `<span class="progress-badge">${doneCount}/${subtaskCount}</span>` : ''}${escapeHtml(t.text)}</div>
           <div class="task-time">创建于 ${formatTime(t.createdAt)}${t.done && t.completedAt ? ' · 完成于 ' + formatTime(t.completedAt) : ''}</div>
@@ -822,14 +836,20 @@ function renderTodoHtml(t) {
           ${subtasksHtml}
         </div>
         <div class="todo-actions">
-          <button class="action-btn sub-add-action" data-action="show-sub-add" data-todo-id="${t.id}" title="添加子任务">+</button>
-          <button class="action-btn edit-btn" data-action="start-edit" data-id="${t.id}" title="编辑标题">✎</button>
-          <button class="action-btn desc-btn ${t.description ? 'has-desc' : ''} ${openDescriptions.has(t.id) ? 'desc-open' : ''}" data-action="toggle-desc" data-id="${t.id}" title="详情描述">
+          <button class="action-btn sub-add-action" type="button" data-action="show-sub-add" data-todo-id="${t.id}" title="添加子任务" aria-label="添加子任务">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+          <button class="action-btn edit-btn" type="button" data-action="start-edit" data-id="${t.id}" title="编辑标题" aria-label="编辑标题">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>
+          </button>
+          <button class="action-btn desc-btn ${t.description ? 'has-desc' : ''} ${openDescriptions.has(t.id) ? 'desc-open' : ''}" type="button" data-action="toggle-desc" data-id="${t.id}" title="详情描述" aria-label="详情描述">
             <svg class="desc-chevron" viewBox="0 0 12 12" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="2,3 6,8 10,3"/>
             </svg>
           </button>
-          <button class="action-btn" data-action="delete" data-id="${t.id}" title="删除">✕</button>
+          <button class="action-btn" type="button" data-action="delete" data-id="${t.id}" title="删除任务" aria-label="删除任务">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 10v6M14 10v6"/></svg>
+          </button>
         </div>
       </div>
     </li>
@@ -852,7 +872,7 @@ function updateListSummary() {
   const activeCount = todos.filter(t => !t.done).length;
   const total = todos.length;
   countText.textContent = total === 0 ? '暂无任务' : `待办 ${activeCount} · 共 ${total} 个`;
-  clearBtn.style.display = todos.some(t => t.done) ? 'inline-block' : 'none';
+  clearBtn.style.display = todos.some(t => t.done) ? 'inline-flex' : 'none';
   updateProgress();
   updateSideStats();
 }
@@ -1308,8 +1328,12 @@ input.addEventListener('keydown', (e) => {
 // 过滤按钮
 filterBtns.forEach(btn => {
   btn.addEventListener('click', () => {
-    filterBtns.forEach(b => b.classList.remove('active'));
+    filterBtns.forEach(b => {
+      b.classList.remove('active');
+      b.setAttribute('aria-pressed', 'false');
+    });
     btn.classList.add('active');
+    btn.setAttribute('aria-pressed', 'true');
     currentFilter = btn.dataset.filter;
     render();
   });
