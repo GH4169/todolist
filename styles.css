@@ -935,14 +935,16 @@ body {
   flex: 1;
   font-size: 0.85rem;
   color: var(--text);
-  transition: all 0.3s;
+  transition: color 0.2s ease;
   word-break: break-word;
   line-height: 1.5;
 }
 
 .subtask-item.done .subtask-text {
-  text-decoration: line-through;
-  text-decoration-color: rgba(255, 255, 255, 0.15);
+  text-decoration-line: line-through;
+  text-decoration-color: color-mix(in srgb, var(--neon-green) 62%, var(--text-dim));
+  text-decoration-thickness: 1px;
+  text-decoration-skip-ink: none;
   color: var(--text-dim);
 }
 
