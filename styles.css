@@ -891,6 +891,15 @@ body {
   background: rgba(255, 255, 255, 0.03);
 }
 
+.subtask-item.done {
+  opacity: 0.62;
+}
+
+.subtask-item.done:hover,
+.subtask-item.done:has(:focus-visible) {
+  opacity: 0.82;
+}
+
 .subtask-checkbox {
   width: 18px;
   height: 18px;
@@ -943,7 +952,7 @@ body {
 .subtask-item.done .subtask-text {
   text-decoration-line: line-through;
   text-decoration-color: color-mix(in srgb, var(--neon-green) 62%, var(--text-dim));
-  text-decoration-thickness: 1px;
+  text-decoration-thickness: 0.75px;
   text-decoration-skip-ink: none;
   color: var(--text-dim);
 }
