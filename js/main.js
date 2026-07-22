@@ -752,8 +752,8 @@ function getEmptyStateHtml() {
   const icon = todos.length === 0
     ? '<svg viewBox="0 0 48 48" aria-hidden="true"><rect x="9" y="8" width="30" height="32" rx="5"/><path d="M16 18h16M16 25h10M16 32h7"/><path class="empty-accent" d="m29 31 3 3 7-8"/></svg>'
     : '<svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="16"/><path class="empty-accent" d="m16 24 5 5 11-12"/></svg>';
-  const title = todos.length === 0 ? '准备好开始了吗？' : '全部搞定！';
-  const desc = todos.length === 0 ? '从一件重要的小事开始' : '今天的清单已经完成';
+  const title = todos.length === 0 ? '今天从哪里开始？' : '这一栏已经清空';
+  const desc = todos.length === 0 ? '先写下一件值得完成的事' : '切换到其他分类，或添加新的任务';
   return `
     <li class="empty-state">
       <div class="empty-icon">${icon}</div>
