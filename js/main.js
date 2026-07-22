@@ -15,7 +15,10 @@ const percentText = document.getElementById('percentText');
 const filterBtns = document.querySelectorAll('.filter-btn');
 
 const circumference = 2 * Math.PI * 60;
-let currentFilter = 'all';
+const DEFAULT_FILTER = 'active';
+const VALID_FILTERS = new Set(['all', 'active', 'completed']);
+const FILTER_STORAGE_PREFIX = 'geek-todos-filter:';
+let currentFilter = DEFAULT_FILTER;
 
 // 记录展开的描述区域 key: "todoId" 或 "todoId:subId"
 let openDescriptions = new Set();
@@ -53,6 +56,40 @@ document.querySelectorAll('.theme-btn').forEach(btn => {
 function showCloudError(error) {
   console.error('Supabase 操作失败:', error);
   window.alert(`云端同步失败：${error.message || '请检查网络和 Supabase 配置'}`);
+}
+
+function syncFilterButtons() {
+  filterBtns.forEach(btn => {
+    const isActive = btn.dataset.filter === currentFilter;
+    btn.classList.toggle('active', isActive);
+    btn.setAttribute('aria-pressed', String(isActive));
+  });
+}
+
+function getSavedFilter(userId) {
+  if (!userId) return DEFAULT_FILTER;
+  try {
+    const savedFilter = localStorage.getItem(`${FILTER_STORAGE_PREFIX}${userId}`);
+    return VALID_FILTERS.has(savedFilter) ? savedFilter : DEFAULT_FILTER;
+  } catch (error) {
+    console.warn('读取筛选偏好失败:', error);
+    return DEFAULT_FILTER;
+  }
+}
+
+function saveFilter(filter) {
+  if (!activeUserId || !VALID_FILTERS.has(filter)) return;
+  try {
+    localStorage.setItem(`${FILTER_STORAGE_PREFIX}${activeUserId}`, filter);
+  } catch (error) {
+    console.warn('保存筛选偏好失败:', error);
+  }
+}
+
+function setCurrentFilter(filter, { persist = false } = {}) {
+  currentFilter = VALID_FILTERS.has(filter) ? filter : DEFAULT_FILTER;
+  syncFilterButtons();
+  if (persist) saveFilter(currentFilter);
 }
 
 async function restoreCloudState(error) {
@@ -1333,13 +1370,7 @@ input.addEventListener('keydown', (e) => {
 // 过滤按钮
 filterBtns.forEach(btn => {
   btn.addEventListener('click', () => {
-    filterBtns.forEach(b => {
-      b.classList.remove('active');
-      b.setAttribute('aria-pressed', 'false');
-    });
-    btn.classList.add('active');
-    btn.setAttribute('aria-pressed', 'true');
-    currentFilter = btn.dataset.filter;
+    setCurrentFilter(btn.dataset.filter, { persist: true });
     render();
   });
 });
@@ -1454,6 +1485,7 @@ async function startTodoApp(user) {
   const sessionVersion = ++appSessionVersion;
   activeUserId = user.id;
   setCurrentUser(user);
+  setCurrentFilter(getSavedFilter(user.id));
 
   list.innerHTML = '<li class="empty-state"><p>正在从云端加载...</p></li>';
   try {
@@ -1480,6 +1512,7 @@ function stopTodoApp() {
   todoChannel = null;
   setCurrentUser(null);
   openDescriptions = new Set();
+  setCurrentFilter(DEFAULT_FILTER);
 }
 
 window.addEventListener('beforeunload', () => unsubscribeTodoChanges(todoChannel));
