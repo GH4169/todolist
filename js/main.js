@@ -25,6 +25,7 @@ let openDescriptions = new Set();
 let todoChannel = null;
 let realtimeRefreshTimer = null;
 const pendingRealtimeEchoes = new Map();
+const pendingDescriptionSaves = new Map();
 const recentLocalCreates = new Map();
 const recentLocalDeletes = new Map();
 let activeUserId = null;
@@ -448,12 +449,18 @@ async function toggleTodo(id) {
 }
 
 async function toggleSubtask(todoId, subId) {
+  const descriptionKey = `${todoId}:${subId}`;
+  const pendingDescriptionSave = pendingDescriptionSaves.get(descriptionKey);
+  if (pendingDescriptionSave && !(await pendingDescriptionSave)) return;
+
   const t = todos.find(t => t.id === todoId);
   if (!t) return;
   const sub = t.subtasks.find(s => s.id === subId);
   if (sub) {
     const previousSubDone = sub.done;
     const previousSubCompletedAt = sub.completedAt;
+    const previousSubDescriptionOpen = sub.descriptionOpen;
+    const previousDescriptionWasOpen = openDescriptions.has(descriptionKey);
     const previousParentDone = t.done;
     const previousParentCompletedAt = t.completedAt;
     const done = !sub.done;
@@ -464,6 +471,11 @@ async function toggleSubtask(todoId, subId) {
 
     sub.done = done;
     sub.completedAt = completedAt;
+    if (done) {
+      sub.descriptionOpen = false;
+      openDescriptions.delete(descriptionKey);
+      syncDescriptionDom(todoId, subId);
+    }
     t.done = parentDone;
     t.completedAt = parentCompletedAt;
     syncSubtaskCompletionDom(t, sub);
@@ -471,7 +483,11 @@ async function toggleSubtask(todoId, subId) {
     // 双向同步：所有子任务完成 → 父任务完成；有子任务取消 → 父任务取消
     try {
       await Promise.all([
-        updateTodoWithRealtimeEcho(subId, { done, completedAt }),
+        updateTodoWithRealtimeEcho(subId, {
+          done,
+          completedAt,
+          ...(done ? { descriptionOpen: false } : {}),
+        }),
         updateTodoWithRealtimeEcho(todoId, { done: parentDone, completedAt: parentCompletedAt }),
       ]);
     } catch (error) {
@@ -486,6 +502,16 @@ async function toggleSubtask(todoId, subId) {
         t.done = previousParentDone;
         t.completedAt = previousParentCompletedAt;
         syncSubtaskCompletionDom(t, sub);
+        if (
+          done
+          && sub.descriptionOpen === false
+          && !openDescriptions.has(descriptionKey)
+        ) {
+          sub.descriptionOpen = previousSubDescriptionOpen;
+          if (previousDescriptionWasOpen) openDescriptions.add(descriptionKey);
+          else openDescriptions.delete(descriptionKey);
+          syncDescriptionDom(todoId, subId);
+        }
       }
       showCloudError(error);
     }
@@ -645,48 +671,60 @@ function startEditDescription(todoId, subId, { isNewDescription = false } = {}) 
     : t.descriptionOpen;
   const rollbackWasOpen = isNewDescription ? false : originalWasOpen;
 
-  const save = async () => {
-    if (saved) return;
+  const save = () => {
+    if (saved) return pendingDescriptionSaves.get(key) || Promise.resolve(true);
     saved = true;
-    const newDesc = textarea.value.trim();
-    const target = subId ? t.subtasks.find(s => s.id === subId) : t;
-    if (!target) return;
+    const operation = (async () => {
+      const newDesc = textarea.value.trim();
+      const target = subId ? t.subtasks.find(s => s.id === subId) : t;
+      if (!target) return false;
 
-    const changes = { description: newDesc };
-    if (isNewDescription) {
-      target.descriptionOpen = Boolean(newDesc);
-      changes.descriptionOpen = Boolean(newDesc);
-    } else if (!newDesc) {
-      changes.descriptionOpen = false;
-    }
-
-    target.description = newDesc;
-    if (!newDesc) {
-      target.descriptionOpen = false;
-      openDescriptions.delete(key);
-    }
-    const optimisticDescriptionOpen = target.descriptionOpen;
-    syncDescriptionDom(todoId, subId);
-
-    const needsUpdate = newDesc !== currentDesc
-      || (!newDesc && originalWasOpen && !isNewDescription);
-    if (!needsUpdate) return;
-
-    try {
-      await updateTodoWithRealtimeEcho(target.id, changes);
-    } catch (error) {
-      if (
-        target.description === newDesc
-        && target.descriptionOpen === optimisticDescriptionOpen
-      ) {
-        target.description = currentDesc;
-        target.descriptionOpen = originalDescriptionOpen;
-        if (rollbackWasOpen) openDescriptions.add(key);
-        else openDescriptions.delete(key);
-        syncDescriptionDom(todoId, subId);
+      const changes = { description: newDesc };
+      if (isNewDescription) {
+        target.descriptionOpen = Boolean(newDesc);
+        changes.descriptionOpen = Boolean(newDesc);
+      } else if (!newDesc) {
+        changes.descriptionOpen = false;
       }
-      showCloudError(error);
-    }
+
+      target.description = newDesc;
+      if (!newDesc) {
+        target.descriptionOpen = false;
+        openDescriptions.delete(key);
+      }
+      const optimisticDescriptionOpen = target.descriptionOpen;
+      syncDescriptionDom(todoId, subId);
+
+      const needsUpdate = newDesc !== currentDesc
+        || (!newDesc && originalWasOpen && !isNewDescription);
+      if (!needsUpdate) return true;
+
+      try {
+        await updateTodoWithRealtimeEcho(target.id, changes);
+        return true;
+      } catch (error) {
+        if (
+          target.description === newDesc
+          && target.descriptionOpen === optimisticDescriptionOpen
+        ) {
+          target.description = currentDesc;
+          target.descriptionOpen = originalDescriptionOpen;
+          if (rollbackWasOpen) openDescriptions.add(key);
+          else openDescriptions.delete(key);
+          syncDescriptionDom(todoId, subId);
+        }
+        showCloudError(error);
+        return false;
+      }
+    })();
+
+    pendingDescriptionSaves.set(key, operation);
+    operation.finally(() => {
+      if (pendingDescriptionSaves.get(key) === operation) {
+        pendingDescriptionSaves.delete(key);
+      }
+    });
+    return operation;
   };
 
   textarea.addEventListener('blur', save);
@@ -1526,6 +1564,7 @@ function stopTodoApp() {
   activeUserId = null;
   clearTimeout(realtimeRefreshTimer);
   pendingRealtimeEchoes.clear();
+  pendingDescriptionSaves.clear();
   recentLocalCreates.clear();
   recentLocalDeletes.clear();
   unsubscribeTodoChanges(todoChannel);
