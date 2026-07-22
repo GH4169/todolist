@@ -81,7 +81,7 @@ async function loadTodos() {
     .select('*')
     .eq('user_id', userId)
     .order('position', { ascending: true })
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: false });
 
   if (error) throw error;
 
@@ -94,6 +94,9 @@ async function loadTodos() {
       parentById.get(item.parentId).subtasks.push(item);
     }
   }
+  parents.forEach(parent => {
+    parent.subtasks.sort((a, b) => (a.position - b.position) || (a.createdAt - b.createdAt));
+  });
 
   todos = parents;
   return todos;

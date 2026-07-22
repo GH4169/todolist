@@ -148,7 +148,9 @@ function consumeLocalDelete(id) {
 }
 
 function compareTodoOrder(a, b) {
-  return (a.position - b.position) || (a.createdAt - b.createdAt);
+  const positionOrder = a.position - b.position;
+  if (positionOrder !== 0) return positionOrder;
+  return a.parentId ? a.createdAt - b.createdAt : b.createdAt - a.createdAt;
 }
 
 function syncOpenDescription(item) {
@@ -284,7 +286,10 @@ function syncSubtaskCompletionDom(todo, subtask) {
     const progressBadge = todoElement.querySelector('.progress-badge');
     if (progressFill) progressFill.style.width = `${Math.round((doneCount / todo.subtasks.length) * 100)}%`;
     if (doneCountElement) doneCountElement.textContent = doneCount;
-    if (progressBadge) progressBadge.textContent = `${doneCount}/${todo.subtasks.length}`;
+    if (progressBadge) {
+      progressBadge.textContent = `${doneCount}/${todo.subtasks.length}`;
+      progressBadge.classList.toggle('is-complete', doneCount === todo.subtasks.length);
+    }
   }
   updateListSummary();
 }
@@ -366,7 +371,7 @@ async function addTodo() {
   const text = input.value.trim();
   if (!text) return;
   try {
-    const todo = await createTodoRecord({ text, position: todos.length });
+    const todo = await createTodoRecord({ text, position: 0 });
     const alreadyPresent = Boolean(findTodoItem(todo.id));
     rememberLocalCreate(todo.id);
     const affectedTodoIds = upsertTodoItem(todo);
@@ -828,7 +833,7 @@ function renderTodoHtml(t) {
           <svg class="collapse-chevron ${t.collapsed ? 'collapsed' : ''}" viewBox="0 0 12 12"><polyline points="2,3 6,8 10,3" /></svg>
         </button>` : ''}
         <div class="todo-body">
-          <div class="todo-text">${t.collapsed && subtaskCount > 0 ? `<span class="progress-badge">${doneCount}/${subtaskCount}</span>` : ''}${escapeHtml(t.text)}</div>
+          <div class="todo-text">${t.collapsed && subtaskCount > 0 ? `<span class="progress-badge ${doneCount === subtaskCount ? 'is-complete' : ''}">${doneCount}/${subtaskCount}</span>` : ''}${escapeHtml(t.text)}</div>
           <div class="task-time">创建于 ${formatTime(t.createdAt)}${t.done && t.completedAt ? ' · 完成于 ' + formatTime(t.completedAt) : ''}</div>
           ${t.description || openDescriptions.has(t.id) ? `<div class="desc-section" data-id="${t.id}" style="display: ${openDescriptions.has(t.id) ? 'block' : 'none'};">
             <div class="desc-display">${t.description ? escapeHtml(t.description) : ''}</div>
@@ -951,7 +956,7 @@ function startEditTitle(id) {
     if (!t.collapsed || t.subtasks.length === 0 || textEl.querySelector('.progress-badge')) return;
     const doneCount = t.subtasks.filter(subtask => subtask.done).length;
     const badge = document.createElement('span');
-    badge.className = 'progress-badge';
+    badge.className = `progress-badge${doneCount === t.subtasks.length ? ' is-complete' : ''}`;
     badge.textContent = `${doneCount}/${t.subtasks.length}`;
     textEl.prepend(badge);
   };

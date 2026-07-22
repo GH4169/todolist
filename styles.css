@@ -1492,7 +1492,6 @@ body.theme-midnight .progress-ring-circle { stroke: var(--neon-blue); }
 body.theme-midnight .datetime-widget,
 body.theme-midnight .side-card { border-color: var(--side-border); background: var(--side-surface); }
 body.theme-midnight .stat-row { border-color: rgba(255,255,255,0.04); }
-body.theme-midnight .progress-badge { background: rgba(107, 184, 255, 0.1); border-color: rgba(107, 184, 255, 0.2); }
 body.theme-midnight .subtask-progress-bar { background: rgba(255,255,255,0.06); }
 body.theme-midnight .desc-section,
 body.theme-midnight .subtask-desc-section {
@@ -1559,7 +1558,6 @@ body.theme-light .progress-ring-circle { stroke: var(--neon-blue); }
 body.theme-light .datetime-widget,
 body.theme-light .side-card { border-color: var(--side-border); background: var(--side-surface); }
 body.theme-light .stat-row { border-color: rgba(0,0,0,0.06); }
-body.theme-light .progress-badge { background: rgba(124,58,237,0.1); border-color: rgba(124,58,237,0.2); color: var(--neon-purple); }
 body.theme-light .subtask-progress-bar { background: rgba(0,0,0,0.06); }
 body.theme-light .filter-btn { color: var(--text-dim); border-color: transparent; }
 body.theme-light .filter-btn.active { background: #fff; color: var(--text); border-color: var(--panel-border); box-shadow: 0 1px 4px rgba(15,23,42,0.08); }
@@ -1573,7 +1571,6 @@ body.theme-light .quote-text { color: var(--text); }
 body.theme-light .todo-text.editing { background: rgba(59,130,246,0.05); }
 body.theme-light .collapse-toggle { color: rgba(0,0,0,0.25); }
 body.theme-light .collapse-toggle:hover { color: rgba(0,0,0,0.5); background: rgba(0,0,0,0.04); }
-body.theme-light .progress-badge { background: rgba(124,58,237,0.08); border-color: rgba(124,58,237,0.2); }
 body.theme-light .progress-ring .bg { stroke: rgba(0, 0, 0, 0.1); }
 body.theme-light .progress-ring .fill { stroke: var(--neon-blue); }
 body.theme-light .desc-section,
@@ -1609,7 +1606,6 @@ body.theme-warm .bg-grid {
 }
 body.theme-warm .bg-glow.glow-1 { background: var(--neon-orange); }
 body.theme-warm .bg-glow.glow-2 { background: var(--neon-purple); }
-body.theme-warm .progress-badge { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.25); }
 body.theme-warm .todo-item.done::before { background: linear-gradient(180deg, var(--neon-green), var(--neon-orange)); }
 body.theme-warm .todo-text.editing { background: rgba(245, 158, 11, 0.05); outline-color: var(--neon-orange); box-shadow: 0 0 15px rgba(245, 158, 11, 0.1); }
 
@@ -1633,7 +1629,6 @@ body.theme-forest .bg-grid {
 }
 body.theme-forest .bg-glow.glow-1 { background: var(--neon-green); }
 body.theme-forest .bg-glow.glow-2 { background: var(--neon-purple); }
-body.theme-forest .progress-badge { background: rgba(52, 211, 153, 0.12); border-color: rgba(52, 211, 153, 0.25); }
 body.theme-forest .todo-item.done::before { background: linear-gradient(180deg, var(--neon-green), var(--neon-blue)); }
 body.theme-forest .todo-text.editing { background: rgba(52, 211, 153, 0.05); outline-color: var(--neon-green); box-shadow: 0 0 15px rgba(52, 211, 153, 0.1); }
 
@@ -1657,7 +1652,6 @@ body.theme-ocean .bg-grid {
 }
 body.theme-ocean .bg-glow.glow-1 { background: var(--neon-blue); }
 body.theme-ocean .bg-glow.glow-2 { background: var(--neon-purple); }
-body.theme-ocean .progress-badge { background: rgba(56, 189, 248, 0.12); border-color: rgba(56, 189, 248, 0.25); }
 body.theme-ocean .todo-item.done::before { background: linear-gradient(180deg, var(--neon-green), var(--neon-blue)); }
 body.theme-ocean .todo-text.editing { background: rgba(56, 189, 248, 0.05); outline-color: var(--neon-blue); box-shadow: 0 0 15px rgba(56, 189, 248, 0.1); }
 
@@ -2307,8 +2301,15 @@ button { -webkit-tap-highlight-color: transparent; }
   padding: 2px 7px;
   margin-right: 7px;
   border-radius: 5px;
-  background: color-mix(in srgb, var(--neon-purple) 11%, transparent);
-  border-color: color-mix(in srgb, var(--neon-purple) 24%, transparent);
+  background: var(--side-surface-subtle);
+  border-color: var(--panel-border);
+  color: var(--neon-blue);
+}
+
+.progress-badge.is-complete {
+  background: color-mix(in srgb, var(--neon-green) 10%, var(--side-surface));
+  border-color: color-mix(in srgb, var(--neon-green) 30%, var(--panel-border));
+  color: var(--neon-green);
 }
 
 .desc-section,
