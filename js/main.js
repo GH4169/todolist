@@ -583,6 +583,13 @@ async function toggleDescription(todoId, subId) {
   if (!state) return;
   const { target } = state;
 
+  if (subId && !target.description && !openDescriptions.has(key)) {
+    openDescriptions.add(key);
+    syncDescriptionDom(todoId, subId);
+    startEditDescription(todoId, subId, { isNewDescription: true });
+    return;
+  }
+
   const previousDescriptionOpen = target.descriptionOpen;
   const descriptionOpen = !openDescriptions.has(key);
   target.descriptionOpen = descriptionOpen;
@@ -608,7 +615,7 @@ function autoResizeTextarea(el) {
   el.style.height = el.scrollHeight + 'px';
 }
 
-function startEditDescription(todoId, subId) {
+function startEditDescription(todoId, subId, { isNewDescription = false } = {}) {
   const t = todos.find(t => t.id === todoId);
   if (!t) return;
 
@@ -636,6 +643,7 @@ function startEditDescription(todoId, subId) {
   const originalDescriptionOpen = subId
     ? t.subtasks.find(s => s.id === subId)?.descriptionOpen
     : t.descriptionOpen;
+  const rollbackWasOpen = isNewDescription ? false : originalWasOpen;
 
   const save = async () => {
     if (saved) return;
@@ -645,7 +653,12 @@ function startEditDescription(todoId, subId) {
     if (!target) return;
 
     const changes = { description: newDesc };
-    if (!newDesc) changes.descriptionOpen = false;
+    if (isNewDescription) {
+      target.descriptionOpen = Boolean(newDesc);
+      changes.descriptionOpen = Boolean(newDesc);
+    } else if (!newDesc) {
+      changes.descriptionOpen = false;
+    }
 
     target.description = newDesc;
     if (!newDesc) {
@@ -655,7 +668,8 @@ function startEditDescription(todoId, subId) {
     const optimisticDescriptionOpen = target.descriptionOpen;
     syncDescriptionDom(todoId, subId);
 
-    const needsUpdate = newDesc !== currentDesc || (!newDesc && originalWasOpen);
+    const needsUpdate = newDesc !== currentDesc
+      || (!newDesc && originalWasOpen && !isNewDescription);
     if (!needsUpdate) return;
 
     try {
@@ -667,7 +681,7 @@ function startEditDescription(todoId, subId) {
       ) {
         target.description = currentDesc;
         target.descriptionOpen = originalDescriptionOpen;
-        if (originalWasOpen) openDescriptions.add(key);
+        if (rollbackWasOpen) openDescriptions.add(key);
         else openDescriptions.delete(key);
         syncDescriptionDom(todoId, subId);
       }
@@ -681,6 +695,11 @@ function startEditDescription(todoId, subId) {
       e.preventDefault();
       e.stopPropagation();
       saved = true; // 阻止 blur 保存
+      if (isNewDescription) {
+        const target = subId ? t.subtasks.find(s => s.id === subId) : t;
+        if (target) target.descriptionOpen = originalDescriptionOpen;
+        openDescriptions.delete(key);
+      }
       syncDescriptionDom(todoId, subId);
       return;
     }
