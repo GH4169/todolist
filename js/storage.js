@@ -177,6 +177,19 @@ async function saveTodoPositions(updateRecord = updateTodoRecord) {
   await Promise.all(updates);
 }
 
+/** 将父任务按当前内存顺序重新编号，不改变任何子任务顺序。 */
+async function saveParentTodoPositions(updateRecord = updateTodoRecord) {
+  const updates = [];
+
+  todos.forEach((todo, position) => {
+    if (todo.position === position) return;
+    todo.position = position;
+    updates.push(updateRecord(todo.id, { position }));
+  });
+
+  await Promise.all(updates);
+}
+
 /** 描述展开状态也存放在 todos 表中，不再使用 localStorage。 */
 function loadOpenDescriptions(items) {
   const open = new Set();

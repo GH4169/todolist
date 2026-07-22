@@ -10,13 +10,26 @@ Todolist helps you organize everyday work with tasks and subtasks, track progres
 
 The application is built with HTML, responsive CSS, and modular Vanilla JavaScript. Supabase provides account authentication, cloud data storage, access control, and realtime synchronization, while GitHub Pages hosts the static frontend.
 
+## Screenshots
+
+### Desktop
+
+![Todolist desktop workspace](output/playwright/readme-desktop.png)
+
+### Mobile
+
+<p align="center">
+  <img src="output/playwright/readme-mobile.png" alt="Todolist mobile workspace" width="390">
+</p>
+
 **Key Features:**
 
 **For users:**
 
 - Create parent tasks and subtasks, edit titles and descriptions inline, mark work as complete, collapse task groups, and clear completed items in bulk.
 - Reorder tasks and subtasks with drag and drop so the most important work stays at the top.
-- Switch between all, active, and completed views, and review completion rates, task statistics, subtask progress, and timestamps at a glance.
+- Start in the active view, switch between all, active, and completed tasks, and restore the last filter selected by each account on the current browser.
+- Review completion rates, task statistics, subtask progress, and timestamps at a glance.
 - Register and sign in with email, recover a forgotten password, and access a private task list that stays synchronized across devices.
 - Choose from six persistent themes and use the responsive interface comfortably on desktop and mobile screens.
 

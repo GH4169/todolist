@@ -415,8 +415,9 @@ async function addTodo() {
     input.value = '';
     input.focus();
     if (!alreadyPresent) renderChangedTodos(affectedTodoIds);
+    await saveParentTodoPositions(updateTodoWithRealtimeEcho);
   } catch (error) {
-    showCloudError(error);
+    await restoreCloudState(error);
   }
 }
 

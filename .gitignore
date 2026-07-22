@@ -1,1 +1,3 @@
-output/playwright/
+output/playwright/*
+!output/playwright/readme-desktop.png
+!output/playwright/readme-mobile.png
