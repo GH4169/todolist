@@ -798,16 +798,22 @@ body {
 .subtask-section {
   margin-top: 12px;
   padding-left: 38px;
-  transition: max-height 0.35s ease, opacity 0.3s ease, margin 0.35s ease;
+  transition: max-height 0.28s ease, opacity 0.2s ease, margin-top 0.28s ease, padding-top 0.28s ease, border-color 0.2s ease, border-top-width 0.2s ease;
   max-height: none;
   opacity: 1;
+}
+
+.subtask-section.is-animating {
+  overflow: hidden;
 }
 
 .subtask-section.collapsed {
   max-height: 0;
   opacity: 0;
   margin-top: 0;
+  padding-top: 0;
   padding-left: 0;
+  border-top-width: 0;
   overflow: hidden;
 }
 
@@ -2346,7 +2352,7 @@ button { -webkit-tap-highlight-color: transparent; }
   border-top: 1px solid var(--panel-border);
 }
 
-.subtask-section.collapsed { padding-left: 0; border-top-color: transparent; }
+.subtask-section.collapsed { padding-top: 0; padding-left: 0; border-top-width: 0; border-top-color: transparent; }
 
 .subtask-item {
   padding: 8px 4px;
@@ -3145,6 +3151,11 @@ textarea { font-family: var(--body-font); }
 
 .subtask-section {
   padding: 12px 0 0 4px;
+}
+
+.subtask-section.collapsed {
+  padding-top: 0;
+  padding-left: 0;
 }
 
 .subtask-item { padding: 9px 4px; }

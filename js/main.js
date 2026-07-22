@@ -26,6 +26,7 @@ let todoChannel = null;
 let realtimeRefreshTimer = null;
 const pendingRealtimeEchoes = new Map();
 const pendingDescriptionSaves = new Map();
+const pendingCollapseUpdates = new Map();
 const recentLocalCreates = new Map();
 const recentLocalDeletes = new Map();
 let activeUserId = null;
@@ -330,6 +331,119 @@ function syncSubtaskCompletionDom(todo, subtask) {
     }
   }
   updateListSummary();
+}
+
+function syncTodoCollapseDom(todo, { animate = true } = {}) {
+  const todoElement = getTodoElement(todo.id);
+  if (!todoElement) return;
+
+  const button = todoElement.querySelector('.collapse-toggle');
+  const chevron = button?.querySelector('.collapse-chevron');
+  const section = todoElement.querySelector('.subtask-section');
+  const textElement = todoElement.querySelector('.todo-text');
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  if (button) {
+    const label = todo.collapsed ? '展开子任务' : '折叠子任务';
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    button.setAttribute('aria-expanded', String(!todo.collapsed));
+  }
+  chevron?.classList.toggle('collapsed', todo.collapsed);
+
+  if (section) {
+    const transitionId = String(Number(section.dataset.collapseTransition || 0) + 1);
+    section.dataset.collapseTransition = transitionId;
+    clearTimeout(section.collapseTransitionTimer);
+
+    if (!animate || reduceMotion) {
+      section.classList.toggle('collapsed', todo.collapsed);
+      section.classList.remove('is-animating');
+      section.style.maxHeight = '';
+    } else {
+      const currentHeight = section.getBoundingClientRect().height;
+      section.classList.add('is-animating');
+      section.style.maxHeight = `${currentHeight}px`;
+      section.getBoundingClientRect();
+      section.classList.toggle('collapsed', todo.collapsed);
+      const targetHeight = todo.collapsed ? 0 : section.scrollHeight;
+
+      requestAnimationFrame(() => {
+        if (section.dataset.collapseTransition === transitionId) {
+          section.style.maxHeight = `${targetHeight}px`;
+        }
+      });
+
+      section.collapseTransitionTimer = setTimeout(() => {
+        if (section.dataset.collapseTransition !== transitionId) return;
+        section.classList.remove('is-animating');
+        section.style.maxHeight = '';
+      }, 380);
+    }
+  }
+
+  if (!textElement) return;
+  const existingBadge = textElement.querySelector('.progress-badge');
+  if (!todo.collapsed) {
+    existingBadge?.remove();
+    return;
+  }
+  if (textElement.classList.contains('editing')) return;
+
+  const doneCount = todo.subtasks.filter(subtask => subtask.done).length;
+  const badge = existingBadge || document.createElement('span');
+  badge.className = `progress-badge${doneCount === todo.subtasks.length ? ' is-complete' : ''}`;
+  badge.textContent = `${doneCount}/${todo.subtasks.length}`;
+  if (!existingBadge) textElement.prepend(badge);
+}
+
+function toggleTodoCollapse(todo) {
+  const previousCollapsed = todo.collapsed;
+  const collapsed = !previousCollapsed;
+  let controller = pendingCollapseUpdates.get(todo.id);
+  if (!controller) {
+    controller = {
+      confirmedCollapsed: previousCollapsed,
+      latestSequence: 0,
+      queue: Promise.resolve(),
+    };
+    pendingCollapseUpdates.set(todo.id, controller);
+  }
+
+  todo.collapsed = collapsed;
+  syncTodoCollapseDom(todo);
+
+  const sequence = ++controller.latestSequence;
+  const expectedUserId = activeUserId;
+  const operation = controller.queue.then(async () => {
+    if (activeUserId !== expectedUserId) return;
+    try {
+      await updateTodoWithRealtimeEcho(todo.id, { collapsed });
+      controller.confirmedCollapsed = collapsed;
+    } catch (error) {
+      if (activeUserId !== expectedUserId) return;
+      const currentTodo = todos.find(item => item.id === todo.id);
+      if (
+        sequence === controller.latestSequence
+        && currentTodo?.collapsed === collapsed
+      ) {
+        currentTodo.collapsed = controller.confirmedCollapsed;
+        syncTodoCollapseDom(currentTodo);
+      }
+      showCloudError(error);
+    }
+  });
+
+  controller.queue = operation;
+  operation.finally(() => {
+    if (
+      controller.queue === operation
+      && sequence === controller.latestSequence
+      && pendingCollapseUpdates.get(todo.id) === controller
+    ) {
+      pendingCollapseUpdates.delete(todo.id);
+    }
+  });
 }
 
 function getDescriptionTarget(todoId, subId) {
@@ -1345,15 +1459,7 @@ list.addEventListener('click', (e) => {
   } else if (action === 'toggle-collapse') {
     e.stopPropagation();
     const t = todos.find(t => t.id === actionEl.dataset.id);
-    if (t) {
-      const collapsed = !t.collapsed;
-      updateTodoWithRealtimeEcho(t.id, { collapsed })
-        .then(() => {
-          t.collapsed = collapsed;
-          renderChangedTodos(new Set([t.id]));
-        })
-        .catch(restoreCloudState);
-    }
+    if (t) toggleTodoCollapse(t);
   } else if (action === 'toggle-desc') {
     e.stopPropagation();
     const todoId = actionEl.dataset.id || actionEl.dataset.todoId;
@@ -1565,6 +1671,7 @@ function stopTodoApp() {
   clearTimeout(realtimeRefreshTimer);
   pendingRealtimeEchoes.clear();
   pendingDescriptionSaves.clear();
+  pendingCollapseUpdates.clear();
   recentLocalCreates.clear();
   recentLocalDeletes.clear();
   unsubscribeTodoChanges(todoChannel);
