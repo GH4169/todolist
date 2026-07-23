@@ -880,7 +880,7 @@ async function toggleDescription(todoId, subId) {
   if (!state) return;
   const { target } = state;
 
-  if (subId && !target.description && !openDescriptions.has(key)) {
+  if (!target.description && !openDescriptions.has(key)) {
     openDescriptions.add(key);
     syncDescriptionDom(todoId, subId);
     startEditDescription(todoId, subId, { isNewDescription: true });
