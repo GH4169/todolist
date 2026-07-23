@@ -315,7 +315,7 @@ function syncSubtaskCompletionDom(todo, subtask) {
       }
       const timeElement = subtaskElement.querySelector('.subtask-time');
       if (timeElement) {
-        timeElement.textContent = `${formatTime(subtask.createdAt)}${subtask.done && subtask.completedAt ? ' · ' + formatTime(subtask.completedAt) : ''}`;
+        timeElement.innerHTML = renderSubtaskTimeContentHtml(subtask);
       }
     }
     syncSubtaskProgressDom(todo, todoElement);
@@ -1141,6 +1141,24 @@ function renderSubtaskAddRowHtml(todoId) {
     </div>`;
 }
 
+function renderSubtaskTimeContentHtml(subtask) {
+  const completedTime = subtask.done && subtask.completedAt
+    ? `
+      <span class="subtask-time-arrow" aria-hidden="true">→</span>
+      <span class="subtask-time-entry is-completed">
+        <span class="subtask-time-label">完成于</span>
+        <span class="subtask-time-value">${formatTime(subtask.completedAt)}</span>
+      </span>`
+    : '';
+
+  return `
+    <span class="subtask-time-entry">
+      <span class="subtask-time-label">创建于</span>
+      <span class="subtask-time-value">${formatTime(subtask.createdAt)}</span>
+    </span>
+    ${completedTime}`;
+}
+
 function renderSubtaskHtml(todo, subtask) {
   return `
     <li class="subtask-item ${subtask.done ? 'done' : ''}" data-todo-id="${todo.id}" data-id="${subtask.id}" draggable="true">
@@ -1149,14 +1167,16 @@ function renderSubtaskHtml(todo, subtask) {
         <button class="subtask-checkbox" type="button" data-action="toggle-sub" data-todo-id="${todo.id}" data-sub-id="${subtask.id}" aria-label="${subtask.done ? '标记为未完成' : '标记为已完成'}" aria-pressed="${subtask.done}">
           <svg viewBox="0 0 16 16"><polyline points="2 8 6 12 14 4" /></svg>
         </button>
-        <span class="subtask-text">${escapeHtml(subtask.text)}</span>
+        <div class="subtask-body">
+          <span class="subtask-text">${escapeHtml(subtask.text)}</span>
+          <div class="subtask-time">${renderSubtaskTimeContentHtml(subtask)}</div>
+        </div>
         <button class="subtask-desc-btn ${subtask.description ? 'has-desc' : ''}" type="button" data-action="toggle-desc" data-todo-id="${todo.id}" data-sub-id="${subtask.id}" title="详情描述" aria-label="详情描述">
           <svg class="desc-icon" viewBox="0 0 16 16" width="12" height="12" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v7a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 11.5v-7z"/>
             <path d="M5.5 6.5h5M5.5 9h3.5"/>
           </svg>
         </button>
-        <span class="subtask-time">${formatTime(subtask.createdAt)}${subtask.done && subtask.completedAt ? ' · ' + formatTime(subtask.completedAt) : ''}</span>
         <button class="subtask-delete" type="button" data-action="delete-sub" data-todo-id="${todo.id}" data-sub-id="${subtask.id}" title="删除子任务" aria-label="删除子任务">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
         </button>

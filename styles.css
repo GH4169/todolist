@@ -693,8 +693,13 @@ body {
 /* 子任务行包装器（让描述区域独占一行） */
 .subtask-main {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.subtask-body {
   flex: 1;
   min-width: 0;
 }
@@ -951,7 +956,7 @@ body {
 }
 
 .subtask-text {
-  flex: 1;
+  display: block;
   font-size: 0.85rem;
   color: var(--text);
   transition: color 0.2s ease;
@@ -986,11 +991,36 @@ body {
 }
 
 .subtask-time {
-  font-size: 0.65rem;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 5px;
+  margin-top: 3px;
+  font-size: 0.62rem;
   color: var(--text-dim);
-  opacity: 0.6;
-  flex-shrink: 0;
+  opacity: 0.76;
+  letter-spacing: 0;
+}
+
+.subtask-time-entry {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
   white-space: nowrap;
+}
+
+.subtask-time-label {
+  color: color-mix(in srgb, var(--side-muted) 82%, var(--text));
+  font-weight: 600;
+}
+
+.subtask-time-entry.is-completed .subtask-time-label {
+  color: color-mix(in srgb, var(--neon-green) 78%, var(--text-dim));
+}
+
+.subtask-time-arrow {
+  color: var(--side-muted);
+  line-height: 1;
 }
 
 .subtask-delete {
@@ -3220,7 +3250,7 @@ textarea { font-family: var(--body-font); }
 
 .subtask-item { padding: 9px 4px; }
 .subtask-text { font-size: 0.82rem; }
-.subtask-time { font-family: var(--utility-font); font-size: 0.59rem; }
+.subtask-time { font-family: var(--utility-font); font-size: 0.62rem; }
 
 .footer {
   margin-top: 16px;
@@ -3431,6 +3461,15 @@ body.theme-light .todo-item:hover { background: var(--panel-bg-strong); }
   .subtask-desc-btn { opacity: 1; }
 
   .subtask-section { padding-left: 0; }
+
+  .subtask-time {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+  }
+
+  .subtask-time-arrow { display: none; }
 
   .side-col { grid-template-columns: 1fr; }
   .side-card,
