@@ -849,20 +849,24 @@ body {
   transform: rotate(-90deg);
 }
 
-.progress-badge {
+.task-progress-meta {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  background: rgba(168, 85, 247, 0.15);
-  color: var(--neon-purple);
-  font-size: 0.75rem;
+  color: color-mix(in srgb, var(--text-dim) 82%, var(--text));
   font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 10px;
-  margin-right: 8px;
-  border: 1px solid rgba(168, 85, 247, 0.25);
   white-space: nowrap;
   letter-spacing: 0;
+}
+
+.task-progress-meta::before {
+  content: '·';
+  margin: 0 6px;
+  color: var(--side-muted);
+  font-weight: 400;
+}
+
+.task-progress-meta.is-complete {
+  color: color-mix(in srgb, var(--neon-green) 72%, var(--text-dim));
 }
 
 .subtask-list {
@@ -2314,21 +2318,6 @@ button { -webkit-tap-highlight-color: transparent; }
   font: inherit;
 }
 
-.progress-badge {
-  padding: 2px 7px;
-  margin-right: 7px;
-  border-radius: 5px;
-  background: var(--side-surface-subtle);
-  border-color: var(--panel-border);
-  color: var(--neon-blue);
-}
-
-.progress-badge.is-complete {
-  background: color-mix(in srgb, var(--neon-green) 10%, var(--side-surface));
-  border-color: color-mix(in srgb, var(--neon-green) 30%, var(--panel-border));
-  color: var(--neon-green);
-}
-
 .desc-section,
 .subtask-desc-section {
   margin-top: 10px;
@@ -3104,7 +3093,13 @@ textarea { font-family: var(--body-font); }
 }
 
 .drag-handle { margin: 1px 0 0; }
-.collapse-toggle { margin-top: -3px; }
+.collapse-toggle {
+  width: 30px;
+  height: 30px;
+  margin-top: -4px;
+  border-radius: 3px;
+  color: var(--side-muted);
+}
 
 .todo-text {
   font-size: 0.94rem;
@@ -3113,6 +3108,9 @@ textarea { font-family: var(--body-font); }
 }
 
 .task-time {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   margin-top: 5px;
   font-family: var(--utility-font);
   font-size: 0.62rem;
@@ -3136,8 +3134,6 @@ textarea { font-family: var(--body-font); }
 
 .todo-item:focus-within .action-btn,
 .todo-item:hover .action-btn { opacity: 1; }
-
-.progress-badge { border-radius: 3px; }
 
 .desc-section,
 .subtask-desc-section {
@@ -3226,9 +3222,10 @@ textarea { font-family: var(--body-font); }
 }
 
 .datetime-time {
-  font-family: var(--utility-font);
+  font-family: var(--body-font);
   font-size: 2.15rem;
   font-weight: 500;
+  font-feature-settings: 'tnum' 1, 'zero' 0;
 }
 
 .datetime-weekday { margin-top: 7px; font-size: 0.72rem; }
@@ -3398,8 +3395,13 @@ body.theme-light .todo-item:hover { background: var(--panel-bg-strong); }
     flex-wrap: wrap;
     padding-left: 28px;
   }
-  .todo-body { flex-basis: calc(100% - 58px); }
+  .todo-body {
+    flex: 1 1 0;
+    flex-basis: 0;
+  }
+  .collapse-toggle { margin-top: -4px; }
   .todo-actions {
+    flex-basis: 100%;
     width: 100%;
     justify-content: flex-end;
     margin-top: 7px;

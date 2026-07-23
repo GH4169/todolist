@@ -294,7 +294,7 @@ function syncTodoCompletionDom(todo) {
     checkbox.setAttribute('aria-pressed', String(todo.done));
     checkbox.setAttribute('aria-label', todo.done ? '标记为未完成' : '标记为已完成');
   }
-  const timeElement = todoElement.querySelector('.task-time');
+  const timeElement = todoElement.querySelector('.task-time-label');
   if (timeElement) {
     timeElement.textContent = `创建于 ${formatTime(todo.createdAt)}${todo.done && todo.completedAt ? ' · 完成于 ' + formatTime(todo.completedAt) : ''}`;
   }
@@ -322,15 +322,37 @@ function syncSubtaskCompletionDom(todo, subtask) {
     const doneCount = todo.subtasks.filter(item => item.done).length;
     const progressFill = todoElement.querySelector('.subtask-bar-fill');
     const doneCountElement = todoElement.querySelector('.subtask-count .done-count');
-    const progressBadge = todoElement.querySelector('.progress-badge');
     if (progressFill) progressFill.style.width = `${Math.round((doneCount / todo.subtasks.length) * 100)}%`;
     if (doneCountElement) doneCountElement.textContent = doneCount;
-    if (progressBadge) {
-      progressBadge.textContent = `${doneCount}/${todo.subtasks.length}`;
-      progressBadge.classList.toggle('is-complete', doneCount === todo.subtasks.length);
+    const progressMeta = todoElement.querySelector('.task-progress-meta');
+    if (progressMeta) {
+      progressMeta.textContent = `子任务 ${doneCount}/${todo.subtasks.length}`;
+      progressMeta.classList.toggle('is-complete', doneCount === todo.subtasks.length);
+      progressMeta.setAttribute('aria-label', `子任务完成情况：${doneCount}/${todo.subtasks.length}`);
     }
   }
   updateListSummary();
+}
+
+function syncCollapsedProgressDom(todo, todoElement) {
+  const timeElement = todoElement.querySelector('.task-time');
+  if (!timeElement) return;
+
+  let progressMeta = timeElement.querySelector('.task-progress-meta');
+  if (!todo.collapsed || todo.subtasks.length === 0) {
+    progressMeta?.remove();
+    return;
+  }
+
+  const doneCount = todo.subtasks.filter(subtask => subtask.done).length;
+  if (!progressMeta) {
+    progressMeta = document.createElement('span');
+    progressMeta.className = 'task-progress-meta';
+    timeElement.appendChild(progressMeta);
+  }
+  progressMeta.textContent = `子任务 ${doneCount}/${todo.subtasks.length}`;
+  progressMeta.classList.toggle('is-complete', doneCount === todo.subtasks.length);
+  progressMeta.setAttribute('aria-label', `子任务完成情况：${doneCount}/${todo.subtasks.length}`);
 }
 
 function syncTodoCollapseDom(todo, { animate = true } = {}) {
@@ -340,7 +362,6 @@ function syncTodoCollapseDom(todo, { animate = true } = {}) {
   const button = todoElement.querySelector('.collapse-toggle');
   const chevron = button?.querySelector('.collapse-chevron');
   const section = todoElement.querySelector('.subtask-section');
-  const textElement = todoElement.querySelector('.todo-text');
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   if (button) {
@@ -382,19 +403,7 @@ function syncTodoCollapseDom(todo, { animate = true } = {}) {
     }
   }
 
-  if (!textElement) return;
-  const existingBadge = textElement.querySelector('.progress-badge');
-  if (!todo.collapsed) {
-    existingBadge?.remove();
-    return;
-  }
-  if (textElement.classList.contains('editing')) return;
-
-  const doneCount = todo.subtasks.filter(subtask => subtask.done).length;
-  const badge = existingBadge || document.createElement('span');
-  badge.className = `progress-badge${doneCount === todo.subtasks.length ? ' is-complete' : ''}`;
-  badge.textContent = `${doneCount}/${todo.subtasks.length}`;
-  if (!existingBadge) textElement.prepend(badge);
+  syncCollapsedProgressDom(todo, todoElement);
 }
 
 function toggleTodoCollapse(todo) {
@@ -1038,17 +1047,17 @@ function renderTodoHtml(t) {
         <button class="checkbox" type="button" data-action="toggle" aria-label="${t.done ? '标记为未完成' : '标记为已完成'}" aria-pressed="${t.done}">
           <svg viewBox="0 0 16 16"><polyline points="2 8 6 12 14 4" /></svg>
         </button>
-        ${subtaskCount > 0 ? `<button class="collapse-toggle" type="button" data-action="toggle-collapse" data-id="${t.id}" title="${t.collapsed ? '展开子任务' : '折叠子任务'}" aria-label="${t.collapsed ? '展开子任务' : '折叠子任务'}" aria-expanded="${!t.collapsed}">
-          <svg class="collapse-chevron ${t.collapsed ? 'collapsed' : ''}" viewBox="0 0 12 12"><polyline points="2,3 6,8 10,3" /></svg>
-        </button>` : ''}
         <div class="todo-body">
-          <div class="todo-text">${t.collapsed && subtaskCount > 0 ? `<span class="progress-badge ${doneCount === subtaskCount ? 'is-complete' : ''}">${doneCount}/${subtaskCount}</span>` : ''}${escapeHtml(t.text)}</div>
-          <div class="task-time">创建于 ${formatTime(t.createdAt)}${t.done && t.completedAt ? ' · 完成于 ' + formatTime(t.completedAt) : ''}</div>
+          <div class="todo-text">${escapeHtml(t.text)}</div>
+          <div class="task-time"><span class="task-time-label">创建于 ${formatTime(t.createdAt)}${t.done && t.completedAt ? ' · 完成于 ' + formatTime(t.completedAt) : ''}</span>${t.collapsed && subtaskCount > 0 ? `<span class="task-progress-meta ${doneCount === subtaskCount ? 'is-complete' : ''}" aria-label="子任务完成情况：${doneCount}/${subtaskCount}">子任务 ${doneCount}/${subtaskCount}</span>` : ''}</div>
           ${t.description || openDescriptions.has(t.id) ? `<div class="desc-section" data-id="${t.id}" style="display: ${openDescriptions.has(t.id) ? 'block' : 'none'};">
             <div class="desc-display">${t.description ? escapeHtml(t.description) : ''}</div>
           </div>` : ''}
           ${subtasksHtml}
         </div>
+        ${subtaskCount > 0 ? `<button class="collapse-toggle" type="button" data-action="toggle-collapse" data-id="${t.id}" title="${t.collapsed ? '展开子任务' : '折叠子任务'}" aria-label="${t.collapsed ? '展开子任务' : '折叠子任务'}" aria-expanded="${!t.collapsed}">
+          <svg class="collapse-chevron ${t.collapsed ? 'collapsed' : ''}" viewBox="0 0 12 12"><polyline points="2,3 6,8 10,3" /></svg>
+        </button>` : ''}
         <div class="todo-actions">
           <button class="action-btn sub-add-action" type="button" data-action="show-sub-add" data-todo-id="${t.id}" title="添加子任务" aria-label="添加子任务">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
@@ -1147,7 +1156,6 @@ function startEditTitle(id) {
 
   textEl.contentEditable = 'true';
   textEl.classList.add('editing');
-  textEl.querySelector('.progress-badge')?.remove();
   textEl.focus();
 
   // 选中全部文字
@@ -1161,15 +1169,6 @@ function startEditTitle(id) {
   let cancelled = false;
   let finishing = false;
 
-  const restoreProgressBadge = () => {
-    if (!t.collapsed || t.subtasks.length === 0 || textEl.querySelector('.progress-badge')) return;
-    const doneCount = t.subtasks.filter(subtask => subtask.done).length;
-    const badge = document.createElement('span');
-    badge.className = `progress-badge${doneCount === t.subtasks.length ? ' is-complete' : ''}`;
-    badge.textContent = `${doneCount}/${t.subtasks.length}`;
-    textEl.prepend(badge);
-  };
-
   const finish = async () => {
     if (finishing) return;
     finishing = true;
@@ -1179,23 +1178,17 @@ function startEditTitle(id) {
 
     if (cancelled || !newText) {
       textEl.textContent = originalText;
-      restoreProgressBadge();
       return;
     }
-    if (newText === originalText) {
-      restoreProgressBadge();
-      return;
-    }
+    if (newText === originalText) return;
 
     t.text = newText;
-    restoreProgressBadge();
     try {
       await updateTodoWithRealtimeEcho(id, { text: newText });
     } catch (error) {
       t.text = originalText;
       if (textEl.isConnected) {
         textEl.textContent = originalText;
-        restoreProgressBadge();
       }
       await restoreCloudState(error);
     }
