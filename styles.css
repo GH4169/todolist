@@ -1064,6 +1064,56 @@ body {
   display: flex;
 }
 
+.subtask-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 10px 4px 0;
+  border-top: 1px solid color-mix(in srgb, var(--panel-border) 72%, transparent);
+}
+
+.subtask-footer .subtask-progress {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.subtask-add-trigger {
+  min-height: 28px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--side-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-family: var(--utility-font);
+  font-size: 0.66rem;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease;
+}
+
+.subtask-add-trigger svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.subtask-add-trigger:hover {
+  color: var(--neon-blue);
+  background: var(--side-surface-subtle);
+  border-color: var(--panel-border);
+}
+
 .subtask-add-row input {
   flex: 1;
   padding: 8px 12px;
@@ -1099,6 +1149,11 @@ body {
 
 .subtask-add-row .sub-confirm:hover {
   background: rgba(0, 212, 255, 0.25);
+}
+
+.subtask-add-row .sub-confirm:disabled {
+  cursor: wait;
+  opacity: 0.5;
 }
 
 .subtask-progress {
@@ -2270,6 +2325,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .collapse-toggle:focus-visible,
 .subtask-delete:focus-visible,
 .subtask-desc-btn:focus-visible,
+.subtask-add-trigger:focus-visible,
 .sub-confirm:focus-visible {
   outline: 2px solid var(--neon-blue);
   outline-offset: 2px;
@@ -2364,6 +2420,14 @@ button { -webkit-tap-highlight-color: transparent; }
 .subtask-add-row {
   margin-top: 10px;
   padding: 2px 0;
+}
+
+.subtask-footer {
+  border-top-color: color-mix(in srgb, var(--panel-border) 78%, transparent);
+}
+
+.subtask-add-trigger {
+  border-radius: 3px;
 }
 
 .subtask-add-row input {
@@ -3408,4 +3472,23 @@ body.theme-light .todo-item:hover { background: var(--panel-bg-strong); }
     padding-top: 7px;
     border-top: 1px solid var(--panel-border);
   }
+
+  .subtask-add-row.visible {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .subtask-add-row input {
+    width: 100%;
+    flex-basis: auto;
+  }
+}
+
+@media (max-width: 360px) {
+  .subtask-footer { gap: 8px; }
+  .subtask-add-trigger {
+    width: 28px;
+    padding: 0;
+  }
+  .subtask-add-trigger span { display: none; }
 }

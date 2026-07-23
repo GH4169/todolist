@@ -318,20 +318,31 @@ function syncSubtaskCompletionDom(todo, subtask) {
         timeElement.textContent = `${formatTime(subtask.createdAt)}${subtask.done && subtask.completedAt ? ' · ' + formatTime(subtask.completedAt) : ''}`;
       }
     }
-
-    const doneCount = todo.subtasks.filter(item => item.done).length;
-    const progressFill = todoElement.querySelector('.subtask-bar-fill');
-    const doneCountElement = todoElement.querySelector('.subtask-count .done-count');
-    if (progressFill) progressFill.style.width = `${Math.round((doneCount / todo.subtasks.length) * 100)}%`;
-    if (doneCountElement) doneCountElement.textContent = doneCount;
-    const progressMeta = todoElement.querySelector('.task-progress-meta');
-    if (progressMeta) {
-      progressMeta.textContent = `子任务 ${doneCount}/${todo.subtasks.length}`;
-      progressMeta.classList.toggle('is-complete', doneCount === todo.subtasks.length);
-      progressMeta.setAttribute('aria-label', `子任务完成情况：${doneCount}/${todo.subtasks.length}`);
-    }
+    syncSubtaskProgressDom(todo, todoElement);
   }
   updateListSummary();
+}
+
+function syncSubtaskProgressDom(todo, todoElement = getTodoElement(todo.id)) {
+  if (!todoElement || todo.subtasks.length === 0) return;
+
+  const doneCount = todo.subtasks.filter(item => item.done).length;
+  const progress = Math.round((doneCount / todo.subtasks.length) * 100);
+  const progressFill = todoElement.querySelector('.subtask-bar-fill');
+  const progressElement = todoElement.querySelector('.subtask-progress');
+  const doneCountElement = todoElement.querySelector('.subtask-count .done-count');
+  const totalCountElement = todoElement.querySelector('.subtask-count .total-count');
+  if (progressFill) progressFill.style.width = `${progress}%`;
+  if (progressElement) progressElement.setAttribute('aria-label', `子任务完成情况：${doneCount}/${todo.subtasks.length}`);
+  if (doneCountElement) doneCountElement.textContent = doneCount;
+  if (totalCountElement) totalCountElement.textContent = todo.subtasks.length;
+
+  const progressMeta = todoElement.querySelector('.task-progress-meta');
+  if (progressMeta) {
+    progressMeta.textContent = `子任务 ${doneCount}/${todo.subtasks.length}`;
+    progressMeta.classList.toggle('is-complete', doneCount === todo.subtasks.length);
+    progressMeta.setAttribute('aria-label', `子任务完成情况：${doneCount}/${todo.subtasks.length}`);
+  }
 }
 
 function syncCollapsedProgressDom(todo, todoElement) {
@@ -353,6 +364,68 @@ function syncCollapsedProgressDom(todo, todoElement) {
   progressMeta.textContent = `子任务 ${doneCount}/${todo.subtasks.length}`;
   progressMeta.classList.toggle('is-complete', doneCount === todo.subtasks.length);
   progressMeta.setAttribute('aria-label', `子任务完成情况：${doneCount}/${todo.subtasks.length}`);
+}
+
+function ensureSubtaskStructureDom(todo, todoElement) {
+  const section = todoElement.querySelector('.subtask-section');
+  if (!section) return null;
+
+  let subtaskList = section.querySelector('.subtask-list');
+  const addRow = section.querySelector('.subtask-add-row');
+  if (!subtaskList) {
+    const template = document.createElement('template');
+    template.innerHTML = '<ul class="subtask-list"></ul>';
+    subtaskList = template.content.firstElementChild;
+    section.insertBefore(subtaskList, addRow || null);
+  }
+
+  if (!section.querySelector('.subtask-footer')) {
+    const template = document.createElement('template');
+    template.innerHTML = renderSubtaskFooterHtml(todo).trim();
+    section.insertBefore(template.content.firstElementChild, addRow || null);
+  }
+
+  if (!todoElement.querySelector('.collapse-toggle')) {
+    const actions = todoElement.querySelector('.todo-actions');
+    if (actions) {
+      const template = document.createElement('template');
+      template.innerHTML = renderCollapseToggleHtml(todo).trim();
+      actions.before(template.content.firstElementChild);
+    }
+  }
+
+  section.classList.toggle('collapsed', todo.collapsed);
+  return subtaskList;
+}
+
+function syncInsertedSubtaskDom(todo, subtask) {
+  const todoElement = syncTodoCompletionDom(todo);
+  if (!todoElement) {
+    updateListSummary();
+    return;
+  }
+
+  const subtaskList = ensureSubtaskStructureDom(todo, todoElement);
+  if (!subtaskList) return;
+
+  let subtaskElement = [...subtaskList.children]
+    .find(element => element.dataset.id === subtask.id);
+  if (!subtaskElement) {
+    subtaskElement = createSubtaskElement(todo, subtask);
+    subtaskList.appendChild(subtaskElement);
+  }
+
+  for (const item of todo.subtasks) {
+    const element = [...subtaskList.children]
+      .find(candidate => candidate.dataset.id === item.id);
+    if (element) subtaskList.appendChild(element);
+  }
+
+  syncSubtaskProgressDom(todo, todoElement);
+  syncCollapsedProgressDom(todo, todoElement);
+  const addRow = todoElement.querySelector('.subtask-add-row');
+  syncSubtaskAddTriggers(todo.id, addRow?.classList.contains('visible') || false);
+  updateListSummary();
 }
 
 function syncTodoCollapseDom(todo, { animate = true } = {}) {
@@ -643,29 +716,104 @@ async function toggleSubtask(todoId, subId) {
 
 async function addSubtask(todoId, text) {
   const t = todos.find(t => t.id === todoId);
-  if (t && text.trim()) {
-    const parentWasDone = t.done;
-    try {
-      const operations = [createTodoRecord({
-        text: text.trim(),
-        parentId: todoId,
-        position: t.subtasks.length,
-      })];
-      if (t.done) {
-        operations.push(updateTodoWithRealtimeEcho(todoId, { done: false, completedAt: null }));
-      }
-      const [subtask] = await Promise.all(operations);
-      const alreadyPresent = Boolean(findTodoItem(subtask.id));
-      rememberLocalCreate(subtask.id);
-      const affectedTodoIds = upsertTodoItem(subtask);
-      if (t.done) {
-        t.done = false;
-        t.completedAt = null;
-      }
-      if (!alreadyPresent || parentWasDone) renderChangedTodos(affectedTodoIds);
-    } catch (error) {
-      await restoreCloudState(error);
+  const subtaskText = text.trim();
+  if (!t || !subtaskText) return false;
+
+  try {
+    const operations = [createTodoRecord({
+      text: subtaskText,
+      parentId: todoId,
+      position: t.subtasks.length,
+    })];
+    if (t.done) {
+      operations.push(updateTodoWithRealtimeEcho(todoId, { done: false, completedAt: null }));
     }
+
+    const [subtask] = await Promise.all(operations);
+    rememberLocalCreate(subtask.id);
+    upsertTodoItem(subtask);
+    if (t.done) {
+      t.done = false;
+      t.completedAt = null;
+    }
+    syncInsertedSubtaskDom(t, subtask);
+    return true;
+  } catch (error) {
+    showCloudError(error);
+    return false;
+  }
+}
+
+function setSubtaskAddPending(row, isPending) {
+  const inputElement = row.querySelector('input');
+  const confirmButton = row.querySelector('.sub-confirm');
+  row.classList.toggle('is-saving', isPending);
+  row.setAttribute('aria-busy', String(isPending));
+  if (inputElement) inputElement.readOnly = isPending;
+  if (confirmButton) confirmButton.disabled = isPending;
+}
+
+function syncSubtaskAddTriggers(todoId, isOpen) {
+  if (!todoId) return;
+  document.querySelectorAll(`[data-action="show-sub-add"][data-todo-id="${todoId}"]`)
+    .forEach(trigger => trigger.setAttribute('aria-expanded', String(isOpen)));
+}
+
+function closeSubtaskAddRow(row, { clear = false } = {}) {
+  if (!row) return;
+  row.classList.remove('visible');
+  const inputElement = row.querySelector('input');
+  if (clear && inputElement && !row.classList.contains('is-saving')) inputElement.value = '';
+  syncSubtaskAddTriggers(row.querySelector('input')?.dataset.todoId, false);
+}
+
+function closeAllSubtaskAddRows(exceptRow = null) {
+  document.querySelectorAll('.subtask-add-row.visible').forEach(row => {
+    if (row !== exceptRow) closeSubtaskAddRow(row);
+  });
+}
+
+function toggleSubtaskAddRow(todoId) {
+  const row = document.getElementById(`sub-add-${todoId}`);
+  const todo = todos.find(item => item.id === todoId);
+  if (!row || !todo) return;
+
+  const isVisible = row.classList.contains('visible');
+  closeAllSubtaskAddRows(row);
+  if (isVisible) {
+    closeSubtaskAddRow(row, { clear: true });
+    return;
+  }
+
+  const inputElement = row.querySelector('input');
+  row.classList.add('visible');
+  syncSubtaskAddTriggers(todoId, true);
+  if (inputElement && !row.classList.contains('is-saving')) inputElement.value = '';
+  if (todo.collapsed) toggleTodoCollapse(todo);
+
+  requestAnimationFrame(() => {
+    inputElement?.focus({ preventScroll: true });
+    row.scrollIntoView({ block: 'nearest' });
+  });
+}
+
+async function submitSubtaskAddRow(row) {
+  if (!row || row.classList.contains('is-saving')) return;
+  const inputElement = row.querySelector('input');
+  const todoId = inputElement?.dataset.todoId;
+  const submittedText = inputElement?.value.trim();
+  if (!todoId || !submittedText) return;
+
+  setSubtaskAddPending(row, true);
+  const wasAdded = await addSubtask(todoId, submittedText);
+  setSubtaskAddPending(row, false);
+  if (!row.isConnected) return;
+
+  if (wasAdded) inputElement.value = '';
+  else inputElement.value = submittedText;
+  if (row.classList.contains('visible')) {
+    inputElement.focus({ preventScroll: true });
+    row.scrollIntoView({ block: 'nearest' });
   }
 }
 
@@ -985,53 +1133,77 @@ function getEmptyStateHtml() {
     </li>`;
 }
 
+function renderSubtaskAddRowHtml(todoId) {
+  return `
+    <div class="subtask-add-row" id="sub-add-${todoId}" aria-busy="false">
+      <input type="text" placeholder="输入子任务" data-action="sub-input" data-todo-id="${todoId}" />
+      <button class="sub-confirm" type="button" data-action="confirm-sub" data-todo-id="${todoId}">添加</button>
+    </div>`;
+}
+
+function renderSubtaskHtml(todo, subtask) {
+  return `
+    <li class="subtask-item ${subtask.done ? 'done' : ''}" data-todo-id="${todo.id}" data-id="${subtask.id}" draggable="true">
+      <div class="subtask-main">
+        <span class="subtask-drag-handle" title="拖拽排序" aria-hidden="true"><svg viewBox="0 0 12 18"><circle cx="3" cy="4" r="1"/><circle cx="9" cy="4" r="1"/><circle cx="3" cy="9" r="1"/><circle cx="9" cy="9" r="1"/><circle cx="3" cy="14" r="1"/><circle cx="9" cy="14" r="1"/></svg></span>
+        <button class="subtask-checkbox" type="button" data-action="toggle-sub" data-todo-id="${todo.id}" data-sub-id="${subtask.id}" aria-label="${subtask.done ? '标记为未完成' : '标记为已完成'}" aria-pressed="${subtask.done}">
+          <svg viewBox="0 0 16 16"><polyline points="2 8 6 12 14 4" /></svg>
+        </button>
+        <span class="subtask-text">${escapeHtml(subtask.text)}</span>
+        <button class="subtask-desc-btn ${subtask.description ? 'has-desc' : ''}" type="button" data-action="toggle-desc" data-todo-id="${todo.id}" data-sub-id="${subtask.id}" title="详情描述" aria-label="详情描述">
+          <svg class="desc-icon" viewBox="0 0 16 16" width="12" height="12" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v7a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 11.5v-7z"/>
+            <path d="M5.5 6.5h5M5.5 9h3.5"/>
+          </svg>
+        </button>
+        <span class="subtask-time">${formatTime(subtask.createdAt)}${subtask.done && subtask.completedAt ? ' · ' + formatTime(subtask.completedAt) : ''}</span>
+        <button class="subtask-delete" type="button" data-action="delete-sub" data-todo-id="${todo.id}" data-sub-id="${subtask.id}" title="删除子任务" aria-label="删除子任务">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      ${subtask.description || openDescriptions.has(todo.id + ':' + subtask.id) ? `<div class="subtask-desc-section" data-todo-id="${todo.id}" data-sub-id="${subtask.id}" style="display: ${openDescriptions.has(todo.id + ':' + subtask.id) ? 'block' : 'none'};">
+        <div class="desc-display">${subtask.description ? escapeHtml(subtask.description) : ''}</div>
+      </div>` : ''}
+    </li>`;
+}
+
+function renderSubtaskFooterHtml(todo) {
+  const doneCount = todo.subtasks.filter(subtask => subtask.done).length;
+  const progress = todo.subtasks.length > 0
+    ? Math.round((doneCount / todo.subtasks.length) * 100)
+    : 0;
+  return `
+    <div class="subtask-footer">
+      <div class="subtask-progress" aria-label="子任务完成情况：${doneCount}/${todo.subtasks.length}">
+        <div class="subtask-bar-bg">
+          <div class="subtask-bar-fill" style="width: ${progress}%"></div>
+        </div>
+        <span class="subtask-count"><span class="done-count">${doneCount}</span>/<span class="total-count">${todo.subtasks.length}</span></span>
+      </div>
+      <button class="subtask-add-trigger" type="button" data-action="show-sub-add" data-todo-id="${todo.id}" aria-label="添加子任务" aria-controls="sub-add-${todo.id}" aria-expanded="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        <span>添加子任务</span>
+      </button>
+    </div>`;
+}
+
+function renderCollapseToggleHtml(todo) {
+  return `<button class="collapse-toggle" type="button" data-action="toggle-collapse" data-id="${todo.id}" title="${todo.collapsed ? '展开子任务' : '折叠子任务'}" aria-label="${todo.collapsed ? '展开子任务' : '折叠子任务'}" aria-expanded="${!todo.collapsed}">
+    <svg class="collapse-chevron ${todo.collapsed ? 'collapsed' : ''}" viewBox="0 0 12 12"><polyline points="2,3 6,8 10,3" /></svg>
+  </button>`;
+}
+
 function renderTodoHtml(t) {
   const subtaskCount = t.subtasks.length;
   const doneCount = t.subtasks.filter(s => s.done).length;
-  const subProgress = subtaskCount > 0
-    ? Math.round((doneCount / subtaskCount) * 100)
-    : 0;
-
-  const subAddRowHtml = `
-      <div class="subtask-add-row" id="sub-add-${t.id}" style="display:none;">
-        <input type="text" placeholder="输入子任务内容，回车确认" data-action="sub-input" data-todo-id="${t.id}" />
-        <button class="sub-confirm" type="button" data-action="confirm-sub" data-todo-id="${t.id}">添加</button>
-      </div>`;
+  const subAddRowHtml = renderSubtaskAddRowHtml(t.id);
 
   const subtasksHtml = subtaskCount > 0 ? `
     <div class="subtask-section ${t.collapsed ? 'collapsed' : ''}">
       <ul class="subtask-list">
-        ${t.subtasks.map(s => `
-          <li class="subtask-item ${s.done ? 'done' : ''}" data-todo-id="${t.id}" data-id="${s.id}" draggable="true">
-            <div class="subtask-main">
-              <span class="subtask-drag-handle" title="拖拽排序" aria-hidden="true"><svg viewBox="0 0 12 18"><circle cx="3" cy="4" r="1"/><circle cx="9" cy="4" r="1"/><circle cx="3" cy="9" r="1"/><circle cx="9" cy="9" r="1"/><circle cx="3" cy="14" r="1"/><circle cx="9" cy="14" r="1"/></svg></span>
-              <button class="subtask-checkbox" type="button" data-action="toggle-sub" data-todo-id="${t.id}" data-sub-id="${s.id}" aria-label="${s.done ? '标记为未完成' : '标记为已完成'}" aria-pressed="${s.done}">
-                <svg viewBox="0 0 16 16"><polyline points="2 8 6 12 14 4" /></svg>
-              </button>
-              <span class="subtask-text">${escapeHtml(s.text)}</span>
-              <button class="subtask-desc-btn ${s.description ? 'has-desc' : ''}" data-action="toggle-desc" data-todo-id="${t.id}" data-sub-id="${s.id}" title="详情描述">
-                <svg class="desc-icon" viewBox="0 0 16 16" width="12" height="12" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v7a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 11.5v-7z"/>
-                  <path d="M5.5 6.5h5M5.5 9h3.5"/>
-                </svg>
-              </button>
-              <span class="subtask-time">${formatTime(s.createdAt)}${s.done && s.completedAt ? ' · ' + formatTime(s.completedAt) : ''}</span>
-              <button class="subtask-delete" type="button" data-action="delete-sub" data-todo-id="${t.id}" data-sub-id="${s.id}" title="删除子任务" aria-label="删除子任务">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
-              </button>
-            </div>
-            ${s.description || openDescriptions.has(t.id + ':' + s.id) ? `<div class="subtask-desc-section" data-todo-id="${t.id}" data-sub-id="${s.id}" style="display: ${openDescriptions.has(t.id + ':' + s.id) ? 'block' : 'none'};">
-              <div class="desc-display">${s.description ? escapeHtml(s.description) : ''}</div>
-            </div>` : ''}
-          </li>
-        `).join('')}
+        ${t.subtasks.map(s => renderSubtaskHtml(t, s)).join('')}
       </ul>
-      <div class="subtask-progress">
-        <div class="subtask-bar-bg">
-          <div class="subtask-bar-fill" style="width: ${subProgress}%"></div>
-        </div>
-        <span class="subtask-count"><span class="done-count">${doneCount}</span>/${subtaskCount}</span>
-      </div>
+      ${renderSubtaskFooterHtml(t)}
       ${subAddRowHtml}
     </div>
   ` : `
@@ -1055,11 +1227,9 @@ function renderTodoHtml(t) {
           </div>` : ''}
           ${subtasksHtml}
         </div>
-        ${subtaskCount > 0 ? `<button class="collapse-toggle" type="button" data-action="toggle-collapse" data-id="${t.id}" title="${t.collapsed ? '展开子任务' : '折叠子任务'}" aria-label="${t.collapsed ? '展开子任务' : '折叠子任务'}" aria-expanded="${!t.collapsed}">
-          <svg class="collapse-chevron ${t.collapsed ? 'collapsed' : ''}" viewBox="0 0 12 12"><polyline points="2,3 6,8 10,3" /></svg>
-        </button>` : ''}
+        ${subtaskCount > 0 ? renderCollapseToggleHtml(t) : ''}
         <div class="todo-actions">
-          <button class="action-btn sub-add-action" type="button" data-action="show-sub-add" data-todo-id="${t.id}" title="添加子任务" aria-label="添加子任务">
+          <button class="action-btn sub-add-action" type="button" data-action="show-sub-add" data-todo-id="${t.id}" title="添加子任务" aria-label="添加子任务" aria-controls="sub-add-${t.id}" aria-expanded="false">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
           </button>
           <button class="action-btn edit-btn" type="button" data-action="start-edit" data-id="${t.id}" title="编辑标题" aria-label="编辑标题">
@@ -1082,6 +1252,12 @@ function renderTodoHtml(t) {
 function createTodoElement(todo) {
   const template = document.createElement('template');
   template.innerHTML = renderTodoHtml(todo).trim();
+  return template.content.firstElementChild;
+}
+
+function createSubtaskElement(todo, subtask) {
+  const template = document.createElement('template');
+  template.innerHTML = renderSubtaskHtml(todo, subtask).trim();
   return template.content.firstElementChild;
 }
 
@@ -1430,29 +1606,20 @@ list.addEventListener('click', (e) => {
     deleteSubtask(actionEl.dataset.todoId, subId);
   } else if (action === 'show-sub-add') {
     e.stopPropagation();
-    const targetTodoId = actionEl.dataset.todoId;
-    const addRow = document.getElementById(`sub-add-${targetTodoId}`);
-    const isVisible = addRow.style.display !== 'none';
-    document.querySelectorAll('.subtask-add-row').forEach(el => { el.style.display = 'none'; });
-    if (!isVisible) {
-      addRow.style.display = 'flex';
-      const inp = addRow.querySelector('input');
-      inp.value = '';
-      inp.focus();
-    }
+    toggleSubtaskAddRow(actionEl.dataset.todoId);
   } else if (action === 'confirm-sub') {
     e.stopPropagation();
-    const targetTodoId = actionEl.dataset.todoId;
-    const row = document.getElementById(`sub-add-${targetTodoId}`);
-    const inp = row.querySelector('input');
-    if (inp.value.trim()) addSubtask(targetTodoId, inp.value);
+    submitSubtaskAddRow(actionEl.closest('.subtask-add-row'));
   } else if (action === 'start-edit') {
     e.stopPropagation();
     startEditTitle(actionEl.dataset.id);
   } else if (action === 'toggle-collapse') {
     e.stopPropagation();
     const t = todos.find(t => t.id === actionEl.dataset.id);
-    if (t) toggleTodoCollapse(t);
+    if (t) {
+      if (!t.collapsed) closeSubtaskAddRow(document.getElementById(`sub-add-${t.id}`), { clear: true });
+      toggleTodoCollapse(t);
+    }
   } else if (action === 'toggle-desc') {
     e.stopPropagation();
     const todoId = actionEl.dataset.id || actionEl.dataset.todoId;
@@ -1483,18 +1650,22 @@ list.addEventListener('dblclick', (e) => {
 
 // 子任务输入框回车确认
 list.addEventListener('keydown', (e) => {
-  if (e.target.dataset.action === 'sub-input' && e.key === 'Enter' && !e.isComposing) {
+  if (e.target.dataset.action !== 'sub-input') return;
+  if (e.key === 'Enter' && !e.isComposing) {
     e.preventDefault();
     e.stopPropagation();
-    const todoId = e.target.dataset.todoId;
-    if (e.target.value.trim()) addSubtask(todoId, e.target.value);
+    submitSubtaskAddRow(e.target.closest('.subtask-add-row'));
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
+    closeSubtaskAddRow(e.target.closest('.subtask-add-row'), { clear: true });
   }
 });
 
 // 点击空白处关闭所有子任务输入行
 document.addEventListener('click', (e) => {
   if (!e.target.closest('.subtask-add-row')) {
-    document.querySelectorAll('.subtask-add-row').forEach(el => { el.style.display = 'none'; });
+    closeAllSubtaskAddRows();
   }
 });
 
@@ -1597,6 +1768,17 @@ function handleRealtimeTodoChange(event, message) {
     if (event === 'UPDATE' && consumeRealtimeEcho(item)) return;
     if (event === 'INSERT' && consumeLocalCreate(item.id)) return;
     if (event === 'DELETE' && consumeLocalDelete(item.id)) return;
+
+    if (event === 'INSERT' && item.parentId) {
+      const affectedTodoIds = upsertTodoItem(item);
+      const parent = todos.find(todo => todo.id === item.parentId);
+      if (!affectedTodoIds || !parent) {
+        scheduleRealtimeRefresh();
+        return;
+      }
+      syncInsertedSubtaskDom(parent, item);
+      return;
+    }
 
     const affectedTodoIds = event === 'DELETE'
       ? removeTodoItem(item.id, item.parentId)
