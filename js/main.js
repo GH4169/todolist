@@ -40,6 +40,8 @@ const settingsCloseBtn = document.getElementById('settingsCloseBtn');
 const showSidebarTimeSetting = document.getElementById('showSidebarTimeSetting');
 const showQuoteSetting = document.getElementById('showQuoteSetting');
 const showTaskTimesSetting = document.getElementById('showTaskTimesSetting');
+const categoryContextMenu = document.getElementById('categoryContextMenu');
+const deleteCategoryDialog = document.getElementById('deleteCategoryDialog');
 
 const circumference = 2 * Math.PI * 60;
 const TIME_VISIBILITY_STORAGE_PREFIX = 'geek-todos-show-times:';
@@ -47,9 +49,12 @@ const SIDEBAR_COLLAPSED_STORAGE_PREFIX = 'geek-todos-sidebar-collapsed:';
 const COMPLETED_EXPANDED_STORAGE_PREFIX = 'geek-todos-completed-expanded:';
 const SIDEBAR_TIME_STORAGE_PREFIX = 'geek-todos-sidebar-time:';
 const QUOTE_VISIBLE_STORAGE_PREFIX = 'geek-todos-quote-visible:';
+const ACTIVE_CATEGORY_STORAGE_PREFIX = 'geek-todos-active-category:';
+const EXPANDED_CATEGORIES_STORAGE_PREFIX = 'geek-todos-expanded-categories:';
 const ALL_CATEGORY_ID = 'all';
 const UNASSIGNED_CATEGORY_ID = 'unassigned';
 let activeCategoryId = ALL_CATEGORY_ID;
+let expandedCategoryIds = new Set();
 let showTaskTimes = false;
 let completedExpanded = false;
 let sidebarCollapsed = false;
@@ -57,6 +62,8 @@ let showSidebarTime = true;
 let showSidebarQuote = true;
 let lastMoveUndo = null;
 let toastTimer = null;
+let contextMenuCategoryId = null;
+let contextMenuReturnFocus = null;
 
 // 记录展开的描述区域 key: "todoId" 或 "todoId:subId"
 let openDescriptions = new Set();
@@ -117,6 +124,68 @@ function saveBoolean(prefix, value) {
   } catch (error) {
     console.warn('保存界面偏好失败:', error);
   }
+}
+
+function getSavedString(prefix, userId, fallback = null) {
+  if (!userId) return fallback;
+  try {
+    return localStorage.getItem(`${prefix}${userId}`) ?? fallback;
+  } catch (error) {
+    console.warn('读取界面偏好失败:', error);
+    return fallback;
+  }
+}
+
+function saveString(prefix, value) {
+  if (!activeUserId) return;
+  try {
+    localStorage.setItem(`${prefix}${activeUserId}`, value);
+  } catch (error) {
+    console.warn('保存界面偏好失败:', error);
+  }
+}
+
+function saveActiveCategory() {
+  saveString(ACTIVE_CATEGORY_STORAGE_PREFIX, activeCategoryId);
+}
+
+function saveExpandedCategories() {
+  saveString(EXPANDED_CATEGORIES_STORAGE_PREFIX, JSON.stringify([...expandedCategoryIds]));
+}
+
+function loadExpandedCategories(userId) {
+  const saved = getSavedString(EXPANDED_CATEGORIES_STORAGE_PREFIX, userId);
+  if (saved === null) return null;
+  try {
+    const ids = JSON.parse(saved);
+    return new Set(Array.isArray(ids) ? ids.filter(id => typeof id === 'string') : []);
+  } catch (error) {
+    console.warn('读取分组展开状态失败:', error);
+    return new Set();
+  }
+}
+
+function isValidCategoryId(categoryId) {
+  if (categoryId === ALL_CATEGORY_ID) return true;
+  if (categoryId === UNASSIGNED_CATEGORY_ID) return todos.some(todo => !todo.categoryId);
+  return Boolean(getCategoryById(categoryId));
+}
+
+function restoreCategoryNavigationState(userId) {
+  const savedCategoryId = getSavedString(ACTIVE_CATEGORY_STORAGE_PREFIX, userId, ALL_CATEGORY_ID);
+  activeCategoryId = isValidCategoryId(savedCategoryId) ? savedCategoryId : ALL_CATEGORY_ID;
+
+  const savedExpandedIds = loadExpandedCategories(userId);
+  expandedCategoryIds = savedExpandedIds ?? new Set(
+    activeCategoryId === ALL_CATEGORY_ID ? [] : [activeCategoryId]
+  );
+  expandedCategoryIds = new Set([...expandedCategoryIds].filter(id => (
+    id === UNASSIGNED_CATEGORY_ID
+      ? todos.some(todo => !todo.categoryId)
+      : Boolean(getCategoryById(id))
+  )));
+  saveActiveCategory();
+  saveExpandedCategories();
 }
 
 function getSavedTimeVisibility(userId) {
@@ -333,6 +402,7 @@ function setActiveCategory(categoryId) {
     || categoryId === UNASSIGNED_CATEGORY_ID
     || Boolean(getCategoryById(categoryId));
   activeCategoryId = validId ? categoryId : ALL_CATEGORY_ID;
+  saveActiveCategory();
   taskWorkspace.hidden = false;
   settingsView.hidden = true;
   settingsBtn.classList.remove('active');
@@ -340,35 +410,81 @@ function setActiveCategory(categoryId) {
   render();
 }
 
-function renderCategoryNavigation() {
-  const unassignedCount = todos.filter(todo => !todo.categoryId).length;
-  const unassignedActive = activeCategoryId === UNASSIGNED_CATEGORY_ID;
-  const unassignedRow = unassignedCount > 0 ? `
-    <li class="category-row system-category-row" data-drop-category-id="${UNASSIGNED_CATEGORY_ID}">
-      <button class="group-nav-item ${unassignedActive ? 'active' : ''}" type="button" data-category-id="${UNASSIGNED_CATEGORY_ID}" ${unassignedActive ? 'aria-current="page"' : ''}>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v12H4z"/><path d="M4 14h5l1.5 2h3L15 14h5"/></svg>
-        <span>未分组</span>
-        <b>${unassignedCount}</b>
-      </button>
-      <button class="category-row-action organize-category-btn" type="button" data-action="bulk-organize" title="批量整理未分组任务" aria-label="批量整理未分组任务">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13"/><path d="m3 6 1 1 2-2M3 12l1 1 2-2M3 18l1 1 2-2"/></svg>
-      </button>
-    </li>` : '';
+function getCategoryTodos(categoryId) {
+  const categoryTodos = todos.filter(todo => (
+    categoryId === UNASSIGNED_CATEGORY_ID
+      ? !todo.categoryId
+      : todo.categoryId === categoryId
+  ));
+  return [
+    ...categoryTodos.filter(todo => !todo.done),
+    ...categoryTodos.filter(todo => todo.done),
+  ];
+}
 
-  const customRows = categories.map(category => {
-    const count = todos.filter(todo => todo.categoryId === category.id).length;
-    const isActive = activeCategoryId === category.id;
-    return `
-      <li class="category-row" draggable="true" data-category-row-id="${category.id}" data-drop-category-id="${category.id}">
-        <button class="group-nav-item ${isActive ? 'active' : ''}" type="button" data-category-id="${category.id}" ${isActive ? 'aria-current="page"' : ''}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h7l2 2h9v10H3z"/></svg>
-          <span class="category-name" title="双击重命名">${escapeHtml(category.name)}</span>
+function renderCategoryTaskTree(categoryId, categoryTodos, expanded) {
+  if (categoryTodos.length === 0) return '';
+  return `
+    <ul class="category-task-tree" id="category-tasks-${categoryId}" ${expanded ? '' : 'hidden'}>
+      ${categoryTodos.map(todo => `
+        <li>
+          <button class="category-task-link ${todo.done ? 'done' : ''}" type="button" data-category-task-id="${todo.id}" data-category-id="${categoryId}" title="${escapeHtml(todo.text)}">
+            <span class="category-task-status" aria-hidden="true"></span>
+            <span>${escapeHtml(todo.text)}</span>
+          </button>
+        </li>`).join('')}
+    </ul>`;
+}
+
+function renderCategoryNode({ id, name, iconPath, isSystem = false }) {
+  const categoryTodos = getCategoryTodos(id);
+  const count = categoryTodos.length;
+  const isActive = activeCategoryId === id;
+  const expanded = count > 0 && expandedCategoryIds.has(id);
+  const rowId = isSystem ? '' : ` data-category-row-id="${id}"`;
+  const dragAttributes = isSystem ? '' : ` draggable="true" data-category-drag-id="${id}"`;
+  const action = isSystem
+    ? `<button class="category-row-action organize-category-btn" type="button" data-action="bulk-organize" title="批量整理未分组任务" aria-label="批量整理未分组任务">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13"/><path d="m3 6 1 1 2-2M3 12l1 1 2-2M3 18l1 1 2-2"/></svg>
+      </button>`
+    : `<button class="category-row-action category-menu-trigger" type="button" data-action="open-category-menu" data-category-id="${id}" title="打开「${escapeHtml(name)}」分组菜单" aria-label="打开「${escapeHtml(name)}」分组菜单" aria-haspopup="menu">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+      </button>`;
+
+  return `
+    <li class="category-node ${isSystem ? 'system-category-node' : ''} ${expanded ? 'expanded' : ''}"${rowId} data-drop-category-id="${id}">
+      <div class="category-row"${dragAttributes}>
+        <button class="category-expand-toggle" type="button" data-action="toggle-category-tree" data-category-id="${id}" aria-label="${expanded ? '折叠' : '展开'}「${escapeHtml(name)}」中的父任务" aria-expanded="${expanded}" aria-controls="category-tasks-${id}" ${count > 0 ? '' : 'disabled'}>
+          <svg viewBox="0 0 12 12" aria-hidden="true"><polyline points="3,2 8,6 3,10"/></svg>
+        </button>
+        <button class="group-nav-item ${isActive ? 'active' : ''}" type="button" data-category-id="${id}" ${isActive ? 'aria-current="page"' : ''}>
+          <svg viewBox="0 0 24 24" aria-hidden="true">${iconPath}</svg>
+          <span class="${isSystem ? '' : 'category-name'}" ${isSystem ? '' : 'title="双击重命名"'}>${escapeHtml(name)}</span>
           <b>${count}</b>
         </button>
-        <button class="category-row-action category-delete-btn" type="button" data-action="delete-category" data-category-id="${category.id}" title="删除「${escapeHtml(category.name)}」" aria-label="删除「${escapeHtml(category.name)}」">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M18 7l-1 13H7L6 7M10 11v5M14 11v5"/></svg>
-        </button>
-      </li>`;
+        ${action}
+      </div>
+      ${renderCategoryTaskTree(id, categoryTodos, expanded)}
+    </li>`;
+}
+
+function renderCategoryNavigation() {
+  const unassignedCount = todos.filter(todo => !todo.categoryId).length;
+  const unassignedRow = unassignedCount > 0
+    ? renderCategoryNode({
+      id: UNASSIGNED_CATEGORY_ID,
+      name: '未分组',
+      iconPath: '<path d="M4 6h16v12H4z"/><path d="M4 14h5l1.5 2h3L15 14h5"/>',
+      isSystem: true,
+    })
+    : '';
+
+  const customRows = categories.map(category => {
+    return renderCategoryNode({
+      id: category.id,
+      name: category.name,
+      iconPath: '<path d="M3 6h7l2 2h9v10H3z"/>',
+    });
   }).join('');
 
   categoryList.innerHTML = unassignedRow + customRows;
@@ -1475,12 +1591,18 @@ function updateListSummary() {
 
 function render() {
   const hasUnassignedTodos = todos.some(todo => !todo.categoryId);
+  let activeCategoryChanged = false;
   if (activeCategoryId !== ALL_CATEGORY_ID
     && activeCategoryId !== UNASSIGNED_CATEGORY_ID
     && !getCategoryById(activeCategoryId)) {
     activeCategoryId = hasUnassignedTodos ? UNASSIGNED_CATEGORY_ID : ALL_CATEGORY_ID;
+    activeCategoryChanged = true;
   }
-  if (activeCategoryId === UNASSIGNED_CATEGORY_ID && !hasUnassignedTodos) activeCategoryId = ALL_CATEGORY_ID;
+  if (activeCategoryId === UNASSIGNED_CATEGORY_ID && !hasUnassignedTodos) {
+    activeCategoryId = ALL_CATEGORY_ID;
+    activeCategoryChanged = true;
+  }
+  if (activeCategoryChanged) saveActiveCategory();
   const scopedTodos = getVisibleTodos();
   const activeTodos = scopedTodos.filter(todo => !todo.done);
   const completedTodos = scopedTodos.filter(todo => todo.done);
@@ -1713,6 +1835,7 @@ async function submitCategoryForm(event) {
     const created = await createCategoryRecord({ name, position: categories.length });
     categories.push(created);
     activeCategoryId = created.id;
+    saveActiveCategory();
     closeDialog('categoryDialog');
     render();
   } catch (error) {
@@ -1721,9 +1844,11 @@ async function submitCategoryForm(event) {
 }
 
 function startCategoryNameEdit(id) {
+  closeCategoryContextMenu();
   const category = getCategoryById(id);
   const row = categoryList.querySelector(`[data-category-row-id="${id}"]`);
-  if (!category || !row || row.classList.contains('editing')) return;
+  const rowHeader = row?.querySelector('.category-row');
+  if (!category || !row || !rowHeader || row.classList.contains('editing')) return;
 
   const originalName = category.name;
   const editInput = document.createElement('input');
@@ -1732,6 +1857,7 @@ function startCategoryNameEdit(id) {
   editInput.maxLength = 30;
   editInput.value = originalName;
   editInput.setAttribute('aria-label', `重命名「${originalName}」`);
+  editInput.style.setProperty('--category-edit-width', `${Math.min(Math.max(originalName.length + 2, 8), 20)}ch`);
 
   let finishing = false;
   let cancelled = false;
@@ -1739,7 +1865,7 @@ function startCategoryNameEdit(id) {
   const restoreRow = () => {
     editInput.remove();
     row.classList.remove('editing');
-    row.draggable = true;
+    rowHeader.draggable = true;
   };
 
   const refocus = message => {
@@ -1783,8 +1909,8 @@ function startCategoryNameEdit(id) {
   };
 
   row.classList.add('editing');
-  row.draggable = false;
-  row.append(editInput);
+  rowHeader.draggable = false;
+  rowHeader.append(editInput);
   editInput.addEventListener('blur', () => void finish());
   editInput.addEventListener('keydown', event => {
     if (event.key === 'Enter' && !event.isComposing) {
@@ -1803,31 +1929,122 @@ function startCategoryNameEdit(id) {
   editInput.select();
 }
 
-async function deleteCategory(id) {
+function closeCategoryContextMenu({ restoreFocus = false } = {}) {
+  if (categoryContextMenu.hidden) return;
+  categoryContextMenu.hidden = true;
+  categoryContextMenu.removeAttribute('style');
+  contextMenuCategoryId = null;
+  if (restoreFocus && contextMenuReturnFocus?.isConnected) contextMenuReturnFocus.focus();
+  contextMenuReturnFocus = null;
+}
+
+function openCategoryContextMenu(id, { x, y, anchor = null, focusMenu = true } = {}) {
+  const category = getCategoryById(id);
+  if (!category) return;
+
+  closeCategoryContextMenu();
+  setAccountMenuOpen(false);
+  contextMenuCategoryId = id;
+  contextMenuReturnFocus = anchor;
+  categoryContextMenu.hidden = false;
+  categoryContextMenu.setAttribute('aria-label', `「${category.name}」分组操作`);
+
+  const anchorRect = anchor?.getBoundingClientRect();
+  const preferredX = Number.isFinite(x) ? x : (anchorRect?.left ?? 0);
+  const preferredY = Number.isFinite(y) ? y : (anchorRect?.bottom ?? 0) + 4;
+  const menuRect = categoryContextMenu.getBoundingClientRect();
+  const left = Math.max(8, Math.min(preferredX, window.innerWidth - menuRect.width - 8));
+  const top = Math.max(8, Math.min(preferredY, window.innerHeight - menuRect.height - 8));
+  categoryContextMenu.style.left = `${left}px`;
+  categoryContextMenu.style.top = `${top}px`;
+
+  if (focusMenu) {
+    requestAnimationFrame(() => categoryContextMenu.querySelector('[role="menuitem"]')?.focus());
+  }
+}
+
+function openDeleteCategoryDialog(id) {
   const category = getCategoryById(id);
   if (!category) return;
   const affectedCount = todos.filter(todo => todo.categoryId === id).length;
-  const confirmation = affectedCount > 0
-    ? `删除「${category.name}」？其中 ${affectedCount} 个任务会移到「未分组」。`
-    : `删除空分组「${category.name}」？`;
-  if (!window.confirm(confirmation)) return;
+  document.getElementById('deleteCategoryId').value = id;
+  document.getElementById('deleteCategoryTitle').textContent = `删除「${category.name}」`;
+  document.getElementById('deleteCategoryMessage').textContent = affectedCount > 0
+    ? `这个分组包含 ${affectedCount} 个父任务。`
+    : '这个分组目前没有任务。';
+  document.getElementById('deleteCategoryNote').textContent = affectedCount > 0
+    ? '删除分组后，这些任务会保留并移到「未分组」。'
+    : '删除后无法恢复该分组。';
+  deleteCategoryDialog.showModal();
+  requestAnimationFrame(() => document.getElementById('cancelDeleteCategoryBtn').focus());
+}
+
+async function deleteCategory(id) {
+  const category = getCategoryById(id);
+  if (!category) return false;
+  const affectedCount = todos.filter(todo => todo.categoryId === id).length;
 
   try {
     await deleteCategoryRecord(id);
     categories = categories.filter(item => item.id !== id);
+    expandedCategoryIds.delete(id);
+    saveExpandedCategories();
     todos.forEach(todo => {
       if (todo.categoryId === id) todo.categoryId = null;
     });
     if (activeCategoryId === id) {
       activeCategoryId = affectedCount > 0 ? UNASSIGNED_CATEGORY_ID : ALL_CATEGORY_ID;
+      saveActiveCategory();
     }
     render();
     showToast(affectedCount > 0
       ? `已删除「${category.name}」，任务已移到未分组`
       : `已删除「${category.name}」`);
+    return true;
   } catch (error) {
     await restoreCloudState(error);
+    return false;
   }
+}
+
+async function submitDeleteCategory(event) {
+  event.preventDefault();
+  const id = document.getElementById('deleteCategoryId').value;
+  const confirmButton = document.getElementById('confirmDeleteCategoryBtn');
+  if (!getCategoryById(id) || confirmButton.disabled) return;
+
+  confirmButton.disabled = true;
+  deleteCategoryDialog.setAttribute('aria-busy', 'true');
+  const deleted = await deleteCategory(id);
+  confirmButton.disabled = false;
+  deleteCategoryDialog.removeAttribute('aria-busy');
+  if (deleted) closeDialog('deleteCategoryDialog');
+}
+
+function toggleCategoryTree(categoryId) {
+  if (getCategoryTodos(categoryId).length === 0) return;
+  if (expandedCategoryIds.has(categoryId)) expandedCategoryIds.delete(categoryId);
+  else expandedCategoryIds.add(categoryId);
+  saveExpandedCategories();
+  renderCategoryNavigation();
+  requestAnimationFrame(() => {
+    categoryList.querySelector(`.category-expand-toggle[data-category-id="${categoryId}"]`)?.focus();
+  });
+}
+
+function openCategoryTask(todoId, categoryId) {
+  const todo = todos.find(item => item.id === todoId);
+  if (!todo || !matchesCategory(todo, categoryId)) return;
+  if (todo.done && !completedExpanded) setCompletedExpanded(true, { persist: true });
+  setActiveCategory(categoryId);
+  requestAnimationFrame(() => {
+    const todoElement = getTodoElement(todoId);
+    if (!todoElement) return;
+    const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+    todoElement.scrollIntoView({ behavior, block: 'center' });
+    todoElement.classList.add('sidebar-target-highlight');
+    setTimeout(() => todoElement.classList.remove('sidebar-target-highlight'), 1200);
+  });
 }
 
 function openMoveDialog(todoId) {
@@ -2203,12 +2420,23 @@ document.getElementById('addCategoryBtn').addEventListener('click', () => openCa
 
 categoryList.addEventListener('click', (event) => {
   const actionButton = event.target.closest('[data-action]');
-  if (actionButton?.dataset.action === 'delete-category') {
-    void deleteCategory(actionButton.dataset.categoryId);
+  if (actionButton?.dataset.action === 'toggle-category-tree') {
+    event.stopPropagation();
+    toggleCategoryTree(actionButton.dataset.categoryId);
+    return;
+  }
+  if (actionButton?.dataset.action === 'open-category-menu') {
+    event.stopPropagation();
+    openCategoryContextMenu(actionButton.dataset.categoryId, { anchor: actionButton });
     return;
   }
   if (actionButton?.dataset.action === 'bulk-organize') {
     openBulkOrganizeDialog();
+    return;
+  }
+  const categoryTask = event.target.closest('[data-category-task-id]');
+  if (categoryTask) {
+    openCategoryTask(categoryTask.dataset.categoryTaskId, categoryTask.dataset.categoryId);
     return;
   }
   const categoryName = event.target.closest('.category-name');
@@ -2231,16 +2459,48 @@ categoryList.addEventListener('dblclick', event => {
 });
 
 categoryList.addEventListener('keydown', event => {
-  if (event.key !== 'F2') return;
-  const categoryButton = event.target.closest('[data-category-id]');
-  if (!categoryButton || !getCategoryById(categoryButton.dataset.categoryId)) return;
+  const row = event.target.closest('[data-category-row-id]');
+  const categoryId = row?.dataset.categoryRowId;
+  if (!categoryId || !getCategoryById(categoryId)) return;
+  if (event.key === 'F2') {
+    event.preventDefault();
+    startCategoryNameEdit(categoryId);
+  } else if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+    event.preventDefault();
+    const anchor = row.querySelector('.group-nav-item');
+    openCategoryContextMenu(categoryId, { anchor });
+  }
+});
+
+categoryList.addEventListener('contextmenu', event => {
+  const rowHeader = event.target.closest('.category-row');
+  const row = rowHeader?.closest('[data-category-row-id]');
+  if (!row || !getCategoryById(row.dataset.categoryRowId)) return;
   event.preventDefault();
-  startCategoryNameEdit(categoryButton.dataset.categoryId);
+  openCategoryContextMenu(row.dataset.categoryRowId, {
+    x: event.clientX,
+    y: event.clientY,
+    anchor: row.querySelector('.group-nav-item'),
+  });
+});
+
+categoryContextMenu.addEventListener('click', event => {
+  const menuItem = event.target.closest('[data-category-menu-action]');
+  const categoryId = contextMenuCategoryId;
+  if (!menuItem || !categoryId) return;
+  const action = menuItem.dataset.categoryMenuAction;
+  closeCategoryContextMenu();
+  if (action === 'rename') startCategoryNameEdit(categoryId);
+  else if (action === 'delete') openDeleteCategoryDialog(categoryId);
 });
 
 categoryList.addEventListener('dragstart', (event) => {
+  const dragHeader = event.target.closest('[data-category-drag-id]');
   const row = event.target.closest('[data-category-row-id]');
-  if (!row || draggedId) return;
+  if (!dragHeader || !row || draggedId || event.target.closest('[data-action]')) {
+    event.preventDefault();
+    return;
+  }
   draggedCategoryId = row.dataset.categoryRowId;
   row.classList.add('dragging-category');
   event.dataTransfer.effectAllowed = 'move';
@@ -2305,20 +2565,35 @@ settingsCloseBtn.addEventListener('click', showTaskWorkspace);
 
 document.addEventListener('click', event => {
   if (!sidebarProfileArea.contains(event.target)) setAccountMenuOpen(false);
+  if (!categoryContextMenu.contains(event.target)
+    && !event.target.closest('[data-action="open-category-menu"]')) {
+    closeCategoryContextMenu();
+  }
 });
 
 document.addEventListener('keydown', event => {
-  if (event.key !== 'Escape' || accountMenuPanel.hidden) return;
-  event.preventDefault();
-  setAccountMenuOpen(false);
-  accountMenuToggle.focus();
+  if (event.key !== 'Escape') return;
+  if (!categoryContextMenu.hidden) {
+    event.preventDefault();
+    closeCategoryContextMenu({ restoreFocus: true });
+    return;
+  }
+  if (!accountMenuPanel.hidden) {
+    event.preventDefault();
+    setAccountMenuOpen(false);
+    accountMenuToggle.focus();
+  }
 });
+
+window.addEventListener('resize', () => closeCategoryContextMenu());
+window.addEventListener('scroll', () => closeCategoryContextMenu(), true);
 
 showSidebarTimeSetting.addEventListener('change', () => setSidebarTimeVisible(showSidebarTimeSetting.checked, { persist: true }));
 showQuoteSetting.addEventListener('change', () => setSidebarQuoteVisible(showQuoteSetting.checked, { persist: true }));
 showTaskTimesSetting.addEventListener('change', () => setTimeVisibility(showTaskTimesSetting.checked, { persist: true }));
 
 document.getElementById('categoryForm').addEventListener('submit', submitCategoryForm);
+document.getElementById('deleteCategoryForm').addEventListener('submit', submitDeleteCategory);
 document.getElementById('moveForm').addEventListener('submit', submitMoveForm);
 document.getElementById('bulkOrganizeForm').addEventListener('submit', submitBulkOrganize);
 document.querySelectorAll('[data-dialog-close]').forEach(button => {
@@ -2471,6 +2746,7 @@ async function startTodoApp(user) {
   try {
     await Promise.all([loadCategories(), loadTodos()]);
     if (sessionVersion !== appSessionVersion || activeUserId !== user.id) return;
+    restoreCategoryNavigationState(user.id);
     openDescriptions = loadOpenDescriptions(todos);
     render();
     [todoChannel, categoryChannel] = await Promise.all([
@@ -2486,6 +2762,8 @@ async function startTodoApp(user) {
 
 function stopTodoApp() {
   appSessionVersion += 1;
+  closeCategoryContextMenu();
+  if (deleteCategoryDialog.open) deleteCategoryDialog.close();
   activeUserId = null;
   clearTimeout(realtimeRefreshTimer);
   pendingRealtimeEchoes.clear();
@@ -2499,6 +2777,7 @@ function stopTodoApp() {
   categoryChannel = null;
   setCurrentUser(null);
   openDescriptions = new Set();
+  expandedCategoryIds = new Set();
   setTimeVisibility(false);
   setSidebarCollapsed(false);
   setCompletedExpanded(false);

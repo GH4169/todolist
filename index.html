@@ -248,6 +248,18 @@
       </main>
     </div>
 
+    <div class="category-context-menu" id="categoryContextMenu" role="menu" aria-label="分组操作" hidden>
+      <button type="button" role="menuitem" data-category-menu-action="rename">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 20 4.5-1 10-10a2.1 2.1 0 0 0-3-3l-10 10L4 20zM13.5 8.5l3 3"/></svg>
+        <span>重命名</span>
+      </button>
+      <span class="category-context-separator" role="separator"></span>
+      <button class="category-context-danger" type="button" role="menuitem" data-category-menu-action="delete">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M18 7l-1 13H7L6 7M10 11v5M14 11v5"/></svg>
+        <span>删除分组</span>
+      </button>
+    </div>
+
     <dialog class="app-dialog profile-dialog" id="profileDialog">
       <form id="profileForm">
         <div class="dialog-heading">
@@ -287,6 +299,24 @@
           <span></span>
           <button class="dialog-secondary" type="button" data-dialog-close="categoryDialog">取消</button>
           <button class="dialog-primary" type="submit">创建</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="app-dialog confirm-dialog" id="deleteCategoryDialog">
+      <form id="deleteCategoryForm">
+        <div class="dialog-heading">
+          <div><span>分组管理</span><h2 id="deleteCategoryTitle">删除分组</h2></div>
+          <button type="button" data-dialog-close="deleteCategoryDialog" title="关闭" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+        </div>
+        <input id="deleteCategoryId" type="hidden">
+        <p class="confirm-dialog-message" id="deleteCategoryMessage"></p>
+        <p class="confirm-dialog-note" id="deleteCategoryNote"></p>
+        <div class="dialog-actions">
+          <span></span>
+          <span></span>
+          <button class="dialog-secondary" id="cancelDeleteCategoryBtn" type="button" data-dialog-close="deleteCategoryDialog">取消</button>
+          <button class="dialog-danger" id="confirmDeleteCategoryBtn" type="submit">删除分组</button>
         </div>
       </form>
     </dialog>
