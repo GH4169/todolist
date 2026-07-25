@@ -33,6 +33,9 @@ const sidebarScrim = document.getElementById('sidebarScrim');
 const taskWorkspace = document.getElementById('taskWorkspace');
 const settingsView = document.getElementById('settingsView');
 const settingsBtn = document.getElementById('settingsBtn');
+const accountMenuToggle = document.getElementById('accountMenuButton');
+const accountMenuPanel = document.getElementById('accountMenu');
+const sidebarProfileArea = document.getElementById('sidebarProfile');
 const settingsCloseBtn = document.getElementById('settingsCloseBtn');
 const showSidebarTimeSetting = document.getElementById('showSidebarTimeSetting');
 const showQuoteSetting = document.getElementById('showQuoteSetting');
@@ -145,6 +148,7 @@ function setTimeVisibility(visible, { persist = false } = {}) {
 
 function setSidebarCollapsed(collapsed, { persist = false } = {}) {
   sidebarCollapsed = Boolean(collapsed);
+  if (sidebarCollapsed) setAccountMenuOpen(false);
   appRoot.classList.toggle('sidebar-collapsed', sidebarCollapsed);
   sidebarToggle.setAttribute('aria-expanded', String(!sidebarCollapsed));
   sidebarToggle.setAttribute('aria-label', sidebarCollapsed ? '展开侧栏' : '收起侧栏');
@@ -1648,7 +1652,15 @@ function showToast(message, undoAction = null) {
   }, 5000);
 }
 
+function setAccountMenuOpen(open) {
+  const expanded = Boolean(open);
+  accountMenuPanel.hidden = !expanded;
+  accountMenuToggle.setAttribute('aria-expanded', String(expanded));
+  sidebarProfileArea.classList.toggle('menu-open', expanded);
+}
+
 function closeMobileSidebar() {
+  setAccountMenuOpen(false);
   appRoot.classList.remove('mobile-sidebar-open');
   mobileSidebarToggle.setAttribute('aria-expanded', 'false');
 }
@@ -1659,6 +1671,7 @@ function openMobileSidebar() {
 }
 
 function showTaskWorkspace() {
+  setAccountMenuOpen(false);
   taskWorkspace.hidden = false;
   settingsView.hidden = true;
   settingsBtn.classList.remove('active');
@@ -1666,6 +1679,7 @@ function showTaskWorkspace() {
 }
 
 function showSettings() {
+  setAccountMenuOpen(false);
   taskWorkspace.hidden = true;
   settingsView.hidden = false;
   settingsBtn.classList.add('active');
@@ -2281,8 +2295,24 @@ mobileSidebarToggle.addEventListener('click', () => {
   else openMobileSidebar();
 });
 sidebarScrim.addEventListener('click', closeMobileSidebar);
+accountMenuToggle.addEventListener('click', event => {
+  event.stopPropagation();
+  setAccountMenuOpen(accountMenuPanel.hidden);
+});
+accountMenuPanel.addEventListener('click', event => event.stopPropagation());
 settingsBtn.addEventListener('click', showSettings);
 settingsCloseBtn.addEventListener('click', showTaskWorkspace);
+
+document.addEventListener('click', event => {
+  if (!sidebarProfileArea.contains(event.target)) setAccountMenuOpen(false);
+});
+
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Escape' || accountMenuPanel.hidden) return;
+  event.preventDefault();
+  setAccountMenuOpen(false);
+  accountMenuToggle.focus();
+});
 
 showSidebarTimeSetting.addEventListener('change', () => setSidebarTimeVisible(showSidebarTimeSetting.checked, { persist: true }));
 showQuoteSetting.addEventListener('change', () => setSidebarQuoteVisible(showQuoteSetting.checked, { persist: true }));

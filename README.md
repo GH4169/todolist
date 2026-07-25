@@ -32,7 +32,7 @@ The application is built with HTML, responsive CSS, and modular Vanilla JavaScri
 - Focus on active tasks by default and reveal completed tasks in a remembered collapsible section at the bottom of each group.
 - Collapse the desktop sidebar to a single quiet reveal button, or use the group drawer on mobile screens.
 - Review completion rates, task statistics, subtask progress, and timestamps at a glance.
-- Register and sign in with email, recover a forgotten password, and access a private task list that stays synchronized across devices.
+- Register and sign in with email, set a synchronized nickname and initial avatar, recover a forgotten password, and access a private task list across devices.
 - Choose from six persistent themes and use the responsive interface comfortably on desktop and mobile screens.
 
 **Technical highlights:**

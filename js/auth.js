@@ -18,9 +18,95 @@ const updatePasswordBtn = document.getElementById('updatePasswordBtn');
 const recoveryMessage = document.getElementById('recoveryMessage');
 const logoutBtn = document.getElementById('logoutBtn');
 const userEmail = document.getElementById('userEmail');
+const userNickname = document.getElementById('userNickname');
+const userAvatarInitial = document.getElementById('userAvatarInitial');
+const accountMenuButton = document.getElementById('accountMenuButton');
+const editProfileBtn = document.getElementById('editProfileBtn');
+const profileDialog = document.getElementById('profileDialog');
+const profileForm = document.getElementById('profileForm');
+const profileNicknameInput = document.getElementById('profileNicknameInput');
+const profileEmailInput = document.getElementById('profileEmailInput');
+const profileAvatarInitial = document.getElementById('profileAvatarInitial');
+const profilePreviewName = document.getElementById('profilePreviewName');
+const profilePreviewEmail = document.getElementById('profilePreviewEmail');
+const saveProfileBtn = document.getElementById('saveProfileBtn');
 
 let visibleUserId = null;
+let visibleUser = null;
 let passwordRecoveryMode = initialAuthRedirectType === 'recovery';
+
+function getDefaultNickname(email = '') {
+  return email.split('@')[0]?.trim() || '用户';
+}
+
+function getUserNickname(user) {
+  const savedNickname = typeof user?.user_metadata?.display_name === 'string'
+    ? user.user_metadata.display_name.trim()
+    : '';
+  return savedNickname || getDefaultNickname(user?.email);
+}
+
+function getAvatarInitial(name = '') {
+  return Array.from(name.trim())[0]?.toLocaleUpperCase('zh-CN') || '用';
+}
+
+function renderUserProfile(user) {
+  const nickname = getUserNickname(user);
+  const email = user?.email || '';
+  userNickname.textContent = nickname;
+  userEmail.textContent = email;
+  userAvatarInitial.textContent = getAvatarInitial(nickname);
+  accountMenuButton.setAttribute('aria-label', `账号：${nickname}`);
+}
+
+function updateProfilePreview() {
+  const nickname = profileNicknameInput.value.trim() || getDefaultNickname(visibleUser?.email);
+  profileAvatarInitial.textContent = getAvatarInitial(nickname);
+  profilePreviewName.textContent = nickname;
+}
+
+function openProfileEditor() {
+  if (!visibleUser) return;
+  setAccountMenuOpen(false);
+  const nickname = getUserNickname(visibleUser);
+  const email = visibleUser.email || '';
+  profileNicknameInput.value = nickname;
+  profileEmailInput.value = email;
+  profilePreviewEmail.textContent = email;
+  updateProfilePreview();
+  profileDialog.showModal();
+  requestAnimationFrame(() => {
+    profileNicknameInput.focus();
+    profileNicknameInput.select();
+  });
+}
+
+async function saveProfile(event) {
+  event.preventDefault();
+  if (!visibleUser || !profileForm.reportValidity()) return;
+  const nickname = profileNicknameInput.value.trim();
+  saveProfileBtn.disabled = true;
+  profileNicknameInput.disabled = true;
+  saveProfileBtn.textContent = '保存中...';
+
+  try {
+    const { data, error } = await supabaseClient.auth.updateUser({
+      data: { display_name: nickname },
+    });
+    if (error) throw error;
+    if (!data.user) throw new Error('无法读取更新后的账号资料');
+    visibleUser = data.user;
+    renderUserProfile(visibleUser);
+    profileDialog.close();
+    showToast('账号资料已更新');
+  } catch (error) {
+    showToast(error.message || '账号资料更新失败');
+  } finally {
+    saveProfileBtn.disabled = false;
+    profileNicknameInput.disabled = false;
+    saveProfileBtn.textContent = '保存更改';
+  }
+}
 
 function setStatusMessage(element, message = '', type = '') {
   element.textContent = message;
@@ -146,6 +232,7 @@ function showPasswordRecovery(session) {
 
   passwordRecoveryMode = true;
   visibleUserId = null;
+  visibleUser = null;
   stopTodoApp();
   appView.hidden = true;
   authView.hidden = false;
@@ -202,6 +289,7 @@ async function submitNewPassword() {
 }
 
 async function logout() {
+  setAccountMenuOpen(false);
   logoutBtn.disabled = true;
   try {
     const { error } = await supabaseClient.auth.signOut({ scope: 'local' });
@@ -219,7 +307,8 @@ async function applySession(session) {
   if (user) {
     authView.hidden = true;
     appView.hidden = false;
-    userEmail.textContent = user.email || '';
+    visibleUser = user;
+    renderUserProfile(user);
     setAuthMessage();
     if (visibleUserId !== user.id) {
       visibleUserId = user.id;
@@ -229,11 +318,14 @@ async function applySession(session) {
   }
 
   visibleUserId = null;
+  visibleUser = null;
   stopTodoApp();
   appView.hidden = true;
   authView.hidden = false;
   showLoginForm();
+  userNickname.textContent = '用户';
   userEmail.textContent = '';
+  userAvatarInitial.textContent = '用';
   authEmail.focus();
 }
 
@@ -247,6 +339,9 @@ recoveryForm.addEventListener('submit', (event) => {
   event.preventDefault();
   submitNewPassword();
 });
+editProfileBtn.addEventListener('click', openProfileEditor);
+profileForm.addEventListener('submit', saveProfile);
+profileNicknameInput.addEventListener('input', updateProfilePreview);
 logoutBtn.addEventListener('click', logout);
 
 supabaseClient.auth.onAuthStateChange((event, session) => {

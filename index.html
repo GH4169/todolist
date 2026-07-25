@@ -75,19 +75,31 @@
             </div>
           </div>
 
-          <div class="sidebar-top-tools">
-            <div class="sidebar-account">
-              <span class="account-avatar" aria-hidden="true">
-                <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.2"/><path d="M5.5 20c.8-3.4 3.1-5.2 6.5-5.2s5.7 1.8 6.5 5.2"/></svg>
+          <div class="sidebar-profile" id="sidebarProfile">
+            <button class="account-trigger" id="accountMenuButton" type="button" aria-expanded="false" aria-controls="accountMenu">
+              <span class="account-avatar" aria-hidden="true"><span id="userAvatarInitial">用</span></span>
+              <span class="account-copy">
+                <strong id="userNickname">用户</strong>
+                <span id="userEmail"></span>
               </span>
-              <span id="userEmail"></span>
+              <svg class="account-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg>
+            </button>
+
+            <div class="account-menu" id="accountMenu" aria-label="账号菜单" hidden>
+              <button class="account-menu-item" id="editProfileBtn" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3"/><path d="M5 20c.8-3.8 3.1-5.8 7-5.8s6.2 2 7 5.8"/></svg>
+                <span>编辑资料</span>
+              </button>
+              <button class="account-menu-item" id="settingsBtn" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg>
+                <span>设置</span>
+              </button>
+              <div class="account-menu-separator" role="separator"></div>
+              <button class="account-menu-item account-menu-danger" id="logoutBtn" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/></svg>
+                <span>退出登录</span>
+              </button>
             </div>
-            <button class="sidebar-settings-btn" id="settingsBtn" type="button" title="设置" aria-label="设置">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg>
-            </button>
-            <button class="sidebar-logout-btn" id="logoutBtn" type="button" title="退出登录" aria-label="退出登录">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/></svg>
-            </button>
           </div>
 
           <section class="sidebar-quote" id="sidebarQuote" aria-labelledby="quoteTitle">
@@ -235,6 +247,32 @@
         </section>
       </main>
     </div>
+
+    <dialog class="app-dialog profile-dialog" id="profileDialog">
+      <form id="profileForm">
+        <div class="dialog-heading">
+          <div><span>账号资料</span><h2>编辑资料</h2></div>
+          <button type="button" data-dialog-close="profileDialog" title="关闭" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+        </div>
+        <div class="profile-preview">
+          <span class="profile-avatar-preview" aria-hidden="true" id="profileAvatarInitial">用</span>
+          <span>
+            <strong id="profilePreviewName">用户</strong>
+            <small id="profilePreviewEmail"></small>
+          </span>
+        </div>
+        <label for="profileNicknameInput">昵称</label>
+        <input id="profileNicknameInput" type="text" maxlength="24" required autocomplete="nickname">
+        <label for="profileEmailInput">邮箱</label>
+        <input id="profileEmailInput" type="email" readonly>
+        <div class="dialog-actions">
+          <span></span>
+          <span></span>
+          <button class="dialog-secondary" type="button" data-dialog-close="profileDialog">取消</button>
+          <button class="dialog-primary" id="saveProfileBtn" type="submit">保存更改</button>
+        </div>
+      </form>
+    </dialog>
 
     <dialog class="app-dialog" id="categoryDialog">
       <form id="categoryForm">
