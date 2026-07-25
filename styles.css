@@ -3820,7 +3820,7 @@ body.theme-light .todo-item:hover { background: var(--panel-bg-strong); }
   text-align: left;
 }
 
-.group-nav-item > span:not(.category-dot) {
+.group-nav-item > span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3892,19 +3892,40 @@ body.theme-light .todo-item:hover { background: var(--panel-bg-strong); }
 .category-row:hover .category-row-action,
 .category-row:focus-within .category-row-action { opacity: 1; }
 
-.category-dot {
-  width: 9px;
-  height: 9px;
-  justify-self: center;
-  border-radius: 2px;
-  background: var(--category-color);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--category-color) 13%, transparent);
+.category-name { cursor: text; }
+
+.category-delete-btn:hover,
+.category-delete-btn:focus-visible {
+  background: var(--danger-soft);
+  color: var(--neon-pink);
 }
 
-.unassigned-dot {
-  background: transparent;
-  border: 1px solid var(--side-muted);
-  box-shadow: none;
+.category-row.editing .group-nav-item,
+.category-row.editing .category-row-action {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.category-inline-edit {
+  z-index: 2;
+  grid-column: 1 / -1;
+  grid-row: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 10px 8px 38px;
+  border: 1px solid var(--neon-blue);
+  border-radius: 4px;
+  outline: 0;
+  background: var(--side-surface-subtle);
+  color: var(--text);
+  font: inherit;
+  box-shadow: inset 3px 0 0 var(--neon-blue);
+}
+
+.category-inline-edit:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--neon-blue) 55%, transparent);
+  outline-offset: 1px;
 }
 
 .category-row.category-drop-target {
@@ -4070,7 +4091,15 @@ body.theme-light .todo-item:hover { background: var(--panel-bg-strong); }
   font-family: var(--utility-font);
   font-size: 0.58rem;
 }
-.task-category-badge > span { width: 7px; height: 7px; border-radius: 2px; background: var(--category-color); }
+.task-category-badge svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .footer { border-top: 0; }
 
 /* A collapsed sidebar is intentionally almost absent: only its reveal control remains. */
@@ -4143,15 +4172,9 @@ body.theme-light .todo-item:hover { background: var(--panel-bg-strong); }
 .dialog-heading span { color: var(--neon-blue); font-family: var(--utility-font); font-size: 0.59rem; font-weight: 700; }
 .dialog-heading h2 { margin-top: 3px; font-family: var(--display-font); font-size: 1.25rem; }
 .dialog-heading button { width: 32px; height: 32px; display: grid; place-items: center; padding: 0; border: 0; background: transparent; color: var(--side-muted); }
-.app-dialog label:not(.category-color-option) { color: var(--text-dim); font-size: 0.7rem; }
+.app-dialog label { color: var(--text-dim); font-size: 0.7rem; }
 .app-dialog input[type="text"],
 .app-dialog select { width: 100%; height: 45px; padding: 0 12px; border: 1px solid var(--panel-border); border-radius: 3px; background: var(--side-surface); color: var(--text); }
-.category-colors { margin: 4px 0; padding: 0; border: 0; }
-.category-colors legend { margin-bottom: 9px; color: var(--text-dim); font-size: 0.7rem; }
-.category-colors > div { display: flex; gap: 9px; }
-.category-color-option input { position: absolute; opacity: 0; }
-.category-color-option span { width: 29px; height: 29px; display: block; border: 2px solid transparent; border-radius: 4px; background: var(--category-color); cursor: pointer; }
-.category-color-option input:checked + span { border-color: var(--text); box-shadow: 0 0 0 3px color-mix(in srgb, var(--category-color) 20%, transparent); }
 .dialog-actions { display: grid; grid-template-columns: auto 1fr auto auto; gap: 8px; margin-top: 10px; }
 .dialog-actions button { min-height: 38px; padding: 0 14px; border-radius: 3px; }
 .dialog-primary { background: var(--neon-blue); color: var(--accent-contrast); }
@@ -4520,4 +4543,8 @@ body.theme-light .todo-item:hover { background: var(--panel-bg-strong); }
   .sidebar-quote { margin-top: 7px; padding-top: 7px; padding-bottom: 7px; }
   .sidebar-datetime { margin-top: 7px; padding: 7px 0; }
   .group-nav { margin-top: 10px; }
+}
+
+@media (hover: none) {
+  .category-row-action { opacity: 1; }
 }

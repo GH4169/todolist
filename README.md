@@ -27,7 +27,7 @@ The application is built with HTML, responsive CSS, and modular Vanilla JavaScri
 **For users:**
 
 - Create parent tasks and subtasks, edit titles and descriptions inline, mark work as complete, collapse task groups, and clear completed items in bulk.
-- Create, rename, color, and reorder custom groups, then move parent tasks and their subtasks between groups individually or in bulk.
+- Create, reorder, inline-rename, and delete custom groups, then move parent tasks and their subtasks between groups individually or in bulk.
 - Reorder tasks and subtasks with drag and drop so the most important work stays at the top.
 - Focus on active tasks by default and reveal completed tasks in a remembered collapsible section at the bottom of each group.
 - Collapse the desktop sidebar to a single quiet reveal button, or use the group drawer on mobile screens.

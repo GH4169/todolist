@@ -130,7 +130,6 @@ function mapCategoryRow(row) {
     id: row.id,
     userId: row.user_id,
     name: row.name,
-    color: row.color,
     position: row.position,
     createdAt: parseTime(row.created_at),
   };
@@ -151,11 +150,11 @@ async function loadCategories() {
   return categories;
 }
 
-async function createCategoryRecord({ name, color, position = 0 }) {
+async function createCategoryRecord({ name, position = 0 }) {
   const userId = requireCurrentUserId();
   const { data, error } = await supabaseClient
     .from('todo_categories')
-    .insert({ name, color, position, user_id: userId })
+    .insert({ name, position, user_id: userId })
     .select()
     .single();
 
@@ -167,7 +166,6 @@ async function updateCategoryRecord(id, changes) {
   const userId = requireCurrentUserId();
   const databaseChanges = {};
   if (Object.hasOwn(changes, 'name')) databaseChanges.name = changes.name;
-  if (Object.hasOwn(changes, 'color')) databaseChanges.color = changes.color;
   if (Object.hasOwn(changes, 'position')) databaseChanges.position = changes.position;
 
   const { data, error } = await supabaseClient

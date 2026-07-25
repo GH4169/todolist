@@ -46,7 +46,6 @@ const SIDEBAR_TIME_STORAGE_PREFIX = 'geek-todos-sidebar-time:';
 const QUOTE_VISIBLE_STORAGE_PREFIX = 'geek-todos-quote-visible:';
 const ALL_CATEGORY_ID = 'all';
 const UNASSIGNED_CATEGORY_ID = 'unassigned';
-const CATEGORY_COLORS = ['#9fc79f', '#78b8c5', '#e6b65f', '#ef806d', '#b8a7d9', '#8fa58f'];
 let activeCategoryId = ALL_CATEGORY_ID;
 let showTaskTimes = false;
 let completedExpanded = false;
@@ -282,10 +281,6 @@ function getCategoryName(categoryId) {
   return getCategoryById(categoryId)?.name || '未分组';
 }
 
-function getCategoryColor(categoryId) {
-  return getCategoryById(categoryId)?.color || '#8fa58f';
-}
-
 function matchesCategory(todo, categoryId = activeCategoryId) {
   if (categoryId === ALL_CATEGORY_ID) return true;
   if (categoryId === UNASSIGNED_CATEGORY_ID) return !todo.categoryId;
@@ -344,17 +339,17 @@ function setActiveCategory(categoryId) {
 function renderCategoryNavigation() {
   const unassignedCount = todos.filter(todo => !todo.categoryId).length;
   const unassignedActive = activeCategoryId === UNASSIGNED_CATEGORY_ID;
-  const unassignedRow = `
+  const unassignedRow = unassignedCount > 0 ? `
     <li class="category-row system-category-row" data-drop-category-id="${UNASSIGNED_CATEGORY_ID}">
       <button class="group-nav-item ${unassignedActive ? 'active' : ''}" type="button" data-category-id="${UNASSIGNED_CATEGORY_ID}" ${unassignedActive ? 'aria-current="page"' : ''}>
-        <span class="category-dot unassigned-dot" aria-hidden="true"></span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v12H4z"/><path d="M4 14h5l1.5 2h3L15 14h5"/></svg>
         <span>未分组</span>
         <b>${unassignedCount}</b>
       </button>
-      ${unassignedCount > 0 ? `<button class="category-row-action organize-category-btn" type="button" data-action="bulk-organize" title="批量整理未分组任务" aria-label="批量整理未分组任务">
+      <button class="category-row-action organize-category-btn" type="button" data-action="bulk-organize" title="批量整理未分组任务" aria-label="批量整理未分组任务">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13"/><path d="m3 6 1 1 2-2M3 12l1 1 2-2M3 18l1 1 2-2"/></svg>
-      </button>` : ''}
-    </li>`;
+      </button>
+    </li>` : '';
 
   const customRows = categories.map(category => {
     const count = todos.filter(todo => todo.categoryId === category.id).length;
@@ -362,12 +357,12 @@ function renderCategoryNavigation() {
     return `
       <li class="category-row" draggable="true" data-category-row-id="${category.id}" data-drop-category-id="${category.id}">
         <button class="group-nav-item ${isActive ? 'active' : ''}" type="button" data-category-id="${category.id}" ${isActive ? 'aria-current="page"' : ''}>
-          <span class="category-dot" style="--category-color: ${category.color}" aria-hidden="true"></span>
-          <span>${escapeHtml(category.name)}</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h7l2 2h9v10H3z"/></svg>
+          <span class="category-name" title="双击重命名">${escapeHtml(category.name)}</span>
           <b>${count}</b>
         </button>
-        <button class="category-row-action" type="button" data-action="edit-category" data-category-id="${category.id}" title="编辑${escapeHtml(category.name)}" aria-label="编辑${escapeHtml(category.name)}">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+        <button class="category-row-action category-delete-btn" type="button" data-action="delete-category" data-category-id="${category.id}" title="删除「${escapeHtml(category.name)}」" aria-label="删除「${escapeHtml(category.name)}」">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M18 7l-1 13H7L6 7M10 11v5M14 11v5"/></svg>
         </button>
       </li>`;
   }).join('');
@@ -1387,7 +1382,7 @@ function renderTodoHtml(t) {
   const doneCount = t.subtasks.filter(s => s.done).length;
   const subAddRowHtml = renderSubtaskAddRowHtml(t.id);
   const categoryBadgeHtml = activeCategoryId === ALL_CATEGORY_ID
-    ? `<span class="task-category-badge"><span style="--category-color: ${getCategoryColor(t.categoryId)}"></span>${escapeHtml(getCategoryName(t.categoryId))}</span>`
+    ? `<span class="task-category-badge"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h7l2 2h9v10H3z"/></svg>${escapeHtml(getCategoryName(t.categoryId))}</span>`
     : '';
 
   const subtasksHtml = subtaskCount > 0 ? `
@@ -1475,11 +1470,13 @@ function updateListSummary() {
 }
 
 function render() {
+  const hasUnassignedTodos = todos.some(todo => !todo.categoryId);
   if (activeCategoryId !== ALL_CATEGORY_ID
     && activeCategoryId !== UNASSIGNED_CATEGORY_ID
     && !getCategoryById(activeCategoryId)) {
-    activeCategoryId = UNASSIGNED_CATEGORY_ID;
+    activeCategoryId = hasUnassignedTodos ? UNASSIGNED_CATEGORY_ID : ALL_CATEGORY_ID;
   }
+  if (activeCategoryId === UNASSIGNED_CATEGORY_ID && !hasUnassignedTodos) activeCategoryId = ALL_CATEGORY_ID;
   const scopedTodos = getVisibleTodos();
   const activeTodos = scopedTodos.filter(todo => !todo.done);
   const completedTodos = scopedTodos.filter(todo => todo.done);
@@ -1679,32 +1676,19 @@ function closeDialog(id) {
   document.getElementById(id)?.close();
 }
 
-function openCategoryDialog(category = null) {
+function openCategoryDialog() {
   const dialog = document.getElementById('categoryDialog');
-  document.getElementById('categoryDialogTitle').textContent = category ? '编辑分组' : '新建分组';
-  document.getElementById('categoryIdInput').value = category?.id || '';
-  document.getElementById('categoryNameInput').value = category?.name || '';
-  document.getElementById('deleteCategoryBtn').hidden = !category;
-
-  const color = category?.color || CATEGORY_COLORS[categories.length % CATEGORY_COLORS.length];
-  document.getElementById('categoryColorOptions').innerHTML = CATEGORY_COLORS.map(value => `
-    <label class="category-color-option" title="${value}">
-      <input type="radio" name="categoryColor" value="${value}" ${value === color ? 'checked' : ''}>
-      <span style="--category-color: ${value}"></span>
-    </label>`).join('');
-
+  document.getElementById('categoryNameInput').value = '';
   dialog.showModal();
   requestAnimationFrame(() => document.getElementById('categoryNameInput').focus());
 }
 
 async function submitCategoryForm(event) {
   event.preventDefault();
-  const id = document.getElementById('categoryIdInput').value;
   const name = document.getElementById('categoryNameInput').value.trim();
-  const color = document.querySelector('input[name="categoryColor"]:checked')?.value || CATEGORY_COLORS[0];
   if (!name) return;
 
-  const duplicate = categories.some(category => category.id !== id && category.name.localeCompare(name, 'zh-CN', { sensitivity: 'accent' }) === 0);
+  const duplicate = categories.some(category => category.name.localeCompare(name, 'zh-CN', { sensitivity: 'accent' }) === 0);
   if (duplicate) {
     showToast('已经有同名分组');
     document.getElementById('categoryNameInput').focus();
@@ -1712,15 +1696,9 @@ async function submitCategoryForm(event) {
   }
 
   try {
-    if (id) {
-      const updated = await updateCategoryRecord(id, { name, color });
-      const category = getCategoryById(id);
-      if (category) Object.assign(category, updated);
-    } else {
-      const created = await createCategoryRecord({ name, color, position: categories.length });
-      categories.push(created);
-      activeCategoryId = created.id;
-    }
+    const created = await createCategoryRecord({ name, position: categories.length });
+    categories.push(created);
+    activeCategoryId = created.id;
     closeDialog('categoryDialog');
     render();
   } catch (error) {
@@ -1728,10 +1706,97 @@ async function submitCategoryForm(event) {
   }
 }
 
-async function deleteCurrentCategory() {
-  const id = document.getElementById('categoryIdInput').value;
+function startCategoryNameEdit(id) {
   const category = getCategoryById(id);
-  if (!category || !window.confirm(`删除“${category.name}”？其中的任务会回到“未分组”。`)) return;
+  const row = categoryList.querySelector(`[data-category-row-id="${id}"]`);
+  if (!category || !row || row.classList.contains('editing')) return;
+
+  const originalName = category.name;
+  const editInput = document.createElement('input');
+  editInput.className = 'category-inline-edit';
+  editInput.type = 'text';
+  editInput.maxLength = 30;
+  editInput.value = originalName;
+  editInput.setAttribute('aria-label', `重命名「${originalName}」`);
+
+  let finishing = false;
+  let cancelled = false;
+
+  const restoreRow = () => {
+    editInput.remove();
+    row.classList.remove('editing');
+    row.draggable = true;
+  };
+
+  const refocus = message => {
+    showToast(message);
+    requestAnimationFrame(() => {
+      if (!editInput.isConnected) return;
+      editInput.focus();
+      editInput.select();
+    });
+  };
+
+  const finish = async () => {
+    if (finishing) return;
+    const name = editInput.value.trim();
+    if (cancelled || name === originalName) {
+      finishing = true;
+      restoreRow();
+      return;
+    }
+    if (!name) {
+      refocus('分组名称不能为空');
+      return;
+    }
+    const duplicate = categories.some(item => item.id !== id
+      && item.name.localeCompare(name, 'zh-CN', { sensitivity: 'accent' }) === 0);
+    if (duplicate) {
+      refocus('已经有同名分组');
+      return;
+    }
+
+    finishing = true;
+    editInput.disabled = true;
+    try {
+      const updated = await updateCategoryRecord(id, { name });
+      Object.assign(category, updated);
+      render();
+    } catch (error) {
+      restoreRow();
+      await restoreCloudState(error);
+    }
+  };
+
+  row.classList.add('editing');
+  row.draggable = false;
+  row.append(editInput);
+  editInput.addEventListener('blur', () => void finish());
+  editInput.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && !event.isComposing) {
+      event.preventDefault();
+      event.stopPropagation();
+      void finish();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      cancelled = true;
+      finishing = true;
+      restoreRow();
+    }
+  });
+  editInput.focus();
+  editInput.select();
+}
+
+async function deleteCategory(id) {
+  const category = getCategoryById(id);
+  if (!category) return;
+  const affectedCount = todos.filter(todo => todo.categoryId === id).length;
+  const confirmation = affectedCount > 0
+    ? `删除「${category.name}」？其中 ${affectedCount} 个任务会移到「未分组」。`
+    : `删除空分组「${category.name}」？`;
+  if (!window.confirm(confirmation)) return;
 
   try {
     await deleteCategoryRecord(id);
@@ -1739,10 +1804,13 @@ async function deleteCurrentCategory() {
     todos.forEach(todo => {
       if (todo.categoryId === id) todo.categoryId = null;
     });
-    if (activeCategoryId === id) activeCategoryId = UNASSIGNED_CATEGORY_ID;
-    closeDialog('categoryDialog');
+    if (activeCategoryId === id) {
+      activeCategoryId = affectedCount > 0 ? UNASSIGNED_CATEGORY_ID : ALL_CATEGORY_ID;
+    }
     render();
-    showToast(`已删除“${category.name}”，任务已移到未分组`);
+    showToast(affectedCount > 0
+      ? `已删除「${category.name}」，任务已移到未分组`
+      : `已删除「${category.name}」`);
   } catch (error) {
     await restoreCloudState(error);
   }
@@ -2121,16 +2189,39 @@ document.getElementById('addCategoryBtn').addEventListener('click', () => openCa
 
 categoryList.addEventListener('click', (event) => {
   const actionButton = event.target.closest('[data-action]');
-  if (actionButton?.dataset.action === 'edit-category') {
-    openCategoryDialog(getCategoryById(actionButton.dataset.categoryId));
+  if (actionButton?.dataset.action === 'delete-category') {
+    void deleteCategory(actionButton.dataset.categoryId);
     return;
   }
   if (actionButton?.dataset.action === 'bulk-organize') {
     openBulkOrganizeDialog();
     return;
   }
+  const categoryName = event.target.closest('.category-name');
+  if (categoryName && event.detail >= 2) {
+    event.preventDefault();
+    event.stopPropagation();
+    startCategoryNameEdit(categoryName.closest('[data-category-row-id]')?.dataset.categoryRowId);
+    return;
+  }
   const categoryButton = event.target.closest('[data-category-id]');
   if (categoryButton) setActiveCategory(categoryButton.dataset.categoryId);
+});
+
+categoryList.addEventListener('dblclick', event => {
+  const categoryName = event.target.closest('.category-name');
+  if (!categoryName) return;
+  event.preventDefault();
+  event.stopPropagation();
+  startCategoryNameEdit(categoryName.closest('[data-category-row-id]')?.dataset.categoryRowId);
+});
+
+categoryList.addEventListener('keydown', event => {
+  if (event.key !== 'F2') return;
+  const categoryButton = event.target.closest('[data-category-id]');
+  if (!categoryButton || !getCategoryById(categoryButton.dataset.categoryId)) return;
+  event.preventDefault();
+  startCategoryNameEdit(categoryButton.dataset.categoryId);
 });
 
 categoryList.addEventListener('dragstart', (event) => {
@@ -2198,7 +2289,6 @@ showQuoteSetting.addEventListener('change', () => setSidebarQuoteVisible(showQuo
 showTaskTimesSetting.addEventListener('change', () => setTimeVisibility(showTaskTimesSetting.checked, { persist: true }));
 
 document.getElementById('categoryForm').addEventListener('submit', submitCategoryForm);
-document.getElementById('deleteCategoryBtn').addEventListener('click', deleteCurrentCategory);
 document.getElementById('moveForm').addEventListener('submit', submitMoveForm);
 document.getElementById('bulkOrganizeForm').addEventListener('submit', submitBulkOrganize);
 document.querySelectorAll('[data-dialog-close]').forEach(button => {

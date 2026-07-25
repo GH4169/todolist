@@ -242,15 +242,13 @@
           <div><span>任务分组</span><h2 id="categoryDialogTitle">新建分组</h2></div>
           <button type="button" data-dialog-close="categoryDialog" title="关闭" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
         </div>
-        <input id="categoryIdInput" type="hidden">
         <label for="categoryNameInput">名称</label>
         <input id="categoryNameInput" type="text" maxlength="30" required autocomplete="off" placeholder="例如：工作">
-        <fieldset class="category-colors"><legend>颜色</legend><div id="categoryColorOptions"></div></fieldset>
         <div class="dialog-actions">
-          <button class="dialog-danger" id="deleteCategoryBtn" type="button" hidden>删除分组</button>
+          <span></span>
           <span></span>
           <button class="dialog-secondary" type="button" data-dialog-close="categoryDialog">取消</button>
-          <button class="dialog-primary" type="submit">保存</button>
+          <button class="dialog-primary" type="submit">创建</button>
         </div>
       </form>
     </dialog>
