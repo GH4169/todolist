@@ -16,11 +16,13 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
 
 // main.js 使用的内存视图；Supabase 是唯一的任务持久化数据源。
 let todos = [];
+let categories = [];
 let currentUserId = null;
 
 function setCurrentUser(user) {
   currentUserId = user?.id || null;
   todos = [];
+  categories = [];
 }
 
 function requireCurrentUserId() {
@@ -37,6 +39,7 @@ function mapRow(row) {
     id: row.id,
     userId: row.user_id,
     parentId: row.parent_id,
+    categoryId: row.category_id || null,
     text: row.text,
     done: row.is_completed,
     subtasks: [],
@@ -58,6 +61,7 @@ function toDatabaseChanges(changes) {
     descriptionOpen: 'is_description_open',
     description: 'description',
     position: 'position',
+    categoryId: 'category_id',
   };
 
   for (const [appKey, column] of Object.entries(mappings)) {
@@ -103,7 +107,7 @@ async function loadTodos() {
 }
 
 /** 新增父任务或子任务，并返回服务器生成 ID 后的完整记录。 */
-async function createTodoRecord({ text, parentId = null, position = 0 }) {
+async function createTodoRecord({ text, parentId = null, categoryId = null, position = 0 }) {
   const userId = requireCurrentUserId();
   const { data, error } = await supabaseClient
     .from('todos')
@@ -111,6 +115,7 @@ async function createTodoRecord({ text, parentId = null, position = 0 }) {
       text,
       user_id: userId,
       parent_id: parentId,
+      category_id: parentId ? null : categoryId,
       position,
     })
     .select()
@@ -118,6 +123,90 @@ async function createTodoRecord({ text, parentId = null, position = 0 }) {
 
   if (error) throw error;
   return mapRow(data);
+}
+
+function mapCategoryRow(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    name: row.name,
+    color: row.color,
+    position: row.position,
+    createdAt: parseTime(row.created_at),
+  };
+}
+
+/** 读取当前用户的自定义分组；NULL category_id 由界面显示为“未分组”。 */
+async function loadCategories() {
+  const userId = requireCurrentUserId();
+  const { data, error } = await supabaseClient
+    .from('todo_categories')
+    .select('*')
+    .eq('user_id', userId)
+    .order('position', { ascending: true })
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+  categories = data.map(mapCategoryRow);
+  return categories;
+}
+
+async function createCategoryRecord({ name, color, position = 0 }) {
+  const userId = requireCurrentUserId();
+  const { data, error } = await supabaseClient
+    .from('todo_categories')
+    .insert({ name, color, position, user_id: userId })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapCategoryRow(data);
+}
+
+async function updateCategoryRecord(id, changes) {
+  const userId = requireCurrentUserId();
+  const databaseChanges = {};
+  if (Object.hasOwn(changes, 'name')) databaseChanges.name = changes.name;
+  if (Object.hasOwn(changes, 'color')) databaseChanges.color = changes.color;
+  if (Object.hasOwn(changes, 'position')) databaseChanges.position = changes.position;
+
+  const { data, error } = await supabaseClient
+    .from('todo_categories')
+    .update(databaseChanges)
+    .eq('id', id)
+    .eq('user_id', userId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapCategoryRow(data);
+}
+
+async function deleteCategoryRecord(id) {
+  const userId = requireCurrentUserId();
+  const { error: moveError } = await supabaseClient
+    .from('todos')
+    .update({ category_id: null })
+    .eq('user_id', userId)
+    .eq('category_id', id);
+
+  if (moveError) throw moveError;
+
+  const { error } = await supabaseClient
+    .from('todo_categories')
+    .delete()
+    .eq('id', id)
+    .eq('user_id', userId);
+
+  if (error) throw error;
+}
+
+async function saveCategoryPositions() {
+  const updates = categories.map((category, position) => {
+    category.position = position;
+    return updateCategoryRecord(category.id, { position });
+  });
+  await Promise.all(updates);
 }
 
 /** 更新一条父任务或子任务。 */
@@ -219,6 +308,24 @@ async function subscribeTodoChanges(userId, onChange) {
     .subscribe();
 }
 
+async function subscribeCategoryChanges(userId, onChange) {
+  if (!userId || userId !== currentUserId) {
+    throw new Error('无法为未登录用户订阅分组');
+  }
+
+  await supabaseClient.realtime.setAuth();
+  return supabaseClient
+    .channel(`todo-categories:${userId}`, { config: { private: true } })
+    .on('broadcast', { event: 'INSERT' }, message => onChange('INSERT', message))
+    .on('broadcast', { event: 'UPDATE' }, message => onChange('UPDATE', message))
+    .on('broadcast', { event: 'DELETE' }, message => onChange('DELETE', message))
+    .subscribe();
+}
+
 function unsubscribeTodoChanges(channel) {
+  if (channel) supabaseClient.removeChannel(channel);
+}
+
+function unsubscribeCategoryChanges(channel) {
   if (channel) supabaseClient.removeChannel(channel);
 }

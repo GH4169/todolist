@@ -57,181 +57,227 @@
   </main>
 
   <div class="app-layout" id="appView" hidden>
-    <div class="app-inner">
-      <!-- 主列 -->
-      <div class="main-col">
-        <div class="workspace-overview">
-          <div class="header">
-            <div class="title-lockup">
-              <div class="brand-mark" aria-hidden="true">
-                <svg viewBox="0 0 24 24"><path d="m7 12 3 3 7-7"/><path d="M19 12a7 7 0 1 1-4.1-6.4"/></svg>
-              </div>
-              <div>
-                <p class="workspace-label">TODAY · 日事工作台</p>
-                <h1>TodoList</h1>
-                <p class="subtitle">把注意力留给下一件事</p>
+    <div class="app-shell">
+      <aside class="side-col" id="sidebar" aria-label="任务分组导航">
+        <button class="sidebar-toggle" id="sidebarToggle" type="button" title="收起侧栏" aria-label="收起侧栏" aria-expanded="true">
+          <svg class="sidebar-toggle-collapse" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 9l-3 3 3 3"/></svg>
+          <svg class="sidebar-toggle-expand" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M12 9l3 3-3 3"/></svg>
+        </button>
+
+        <div class="sidebar-content" id="sidebarContent">
+          <div class="sidebar-brand">
+            <div class="brand-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="m7 12 3 3 7-7"/><path d="M19 12a7 7 0 1 1-4.1-6.4"/></svg>
+            </div>
+            <div>
+              <strong>TodoList</strong>
+              <span>把注意力留给下一件事</span>
+            </div>
+          </div>
+
+          <div class="sidebar-top-tools">
+            <div class="sidebar-account">
+              <span class="account-avatar" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.2"/><path d="M5.5 20c.8-3.4 3.1-5.2 6.5-5.2s5.7 1.8 6.5 5.2"/></svg>
+              </span>
+              <span id="userEmail"></span>
+            </div>
+            <button class="sidebar-settings-btn" id="settingsBtn" type="button" title="设置" aria-label="设置">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg>
+            </button>
+            <button class="sidebar-logout-btn" id="logoutBtn" type="button" title="退出登录" aria-label="退出登录">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/></svg>
+            </button>
+          </div>
+
+          <section class="sidebar-quote" id="sidebarQuote" aria-labelledby="quoteTitle">
+            <div class="sidebar-quote-heading">
+              <span id="quoteTitle">每日一句</span>
+              <button id="refreshQuoteBtn" type="button" title="换一句" aria-label="换一句">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5"/><path d="M4 17v-5h5"/><path d="M6.1 9a7 7 0 0 1 11.7-2L20 9M4 15l2.2 2a7 7 0 0 0 11.7-2"/></svg>
+              </button>
+            </div>
+            <p class="quote-text" id="quoteText">Stay hungry, stay foolish.</p>
+          </section>
+
+          <div class="sidebar-datetime" id="sidebarDatetime">
+            <span id="dateDisplay"></span>
+            <span><span id="weekdayDisplay"></span><b id="timeDisplay"></b></span>
+          </div>
+
+          <nav class="group-nav">
+            <button class="group-nav-item active" id="allTasksNav" type="button" data-category-id="all" aria-current="page">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/></svg>
+              <span>全部任务</span>
+              <b id="allTaskCount">0</b>
+            </button>
+
+            <div class="group-nav-heading">
+              <span>我的分组</span>
+            </div>
+            <ul class="category-list" id="categoryList"></ul>
+          </nav>
+
+          <div class="sidebar-bottom-action">
+            <button class="sidebar-add-category" id="addCategoryBtn" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+              <span>新建分组</span>
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <button class="mobile-sidebar-toggle" id="mobileSidebarToggle" type="button" title="打开分组导航" aria-label="打开分组导航" aria-expanded="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <button class="sidebar-scrim" id="sidebarScrim" type="button" aria-label="关闭分组导航"></button>
+
+      <main class="main-col">
+        <section id="taskWorkspace">
+          <div class="workspace-overview">
+            <div class="header">
+              <p class="workspace-label">TODOLIST · 专注工作台</p>
+              <h1 id="workspaceTitle">全部任务</h1>
+              <p class="subtitle" id="workspaceSummary">0 个进行中 · 0 个已完成</p>
+            </div>
+
+            <div class="workspace-tools">
+              <div class="progress-ring" role="status" aria-label="任务完成率">
+                <div class="ring-wrapper">
+                  <svg viewBox="0 0 140 140" aria-hidden="true">
+                    <circle class="bg" cx="70" cy="70" r="60" />
+                    <circle class="fill" id="progressCircle" cx="70" cy="70" r="60"
+                            stroke-dasharray="377" stroke-dashoffset="377" />
+                  </svg>
+                  <div class="progress-text">
+                    <div class="progress-percent" id="percentText">0%</div>
+                    <div class="progress-label">完成率</div>
+                  </div>
+                </div>
               </div>
             </div>
-            <div class="user-session">
-              <span id="userEmail"></span>
-              <button id="logoutBtn" type="button" title="退出登录" aria-label="退出登录">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/></svg>
+          </div>
+
+          <div class="input-section">
+            <div class="input-group">
+              <div class="composer-category" id="composerCategory" hidden>
+                <label class="sr-only" for="newTaskCategorySelect">新任务分组</label>
+                <select id="newTaskCategorySelect" aria-label="新任务分组"></select>
+              </div>
+              <div class="input-wrapper">
+                <svg class="input-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/></svg>
+                <label class="sr-only" for="todoInput">新任务</label>
+                <input type="text" id="todoInput" placeholder="接下来要完成什么？" autocomplete="off" />
+              </div>
+              <button class="add-btn" id="addBtn" type="button" title="添加任务" aria-label="添加任务">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
               </button>
             </div>
           </div>
 
-          <!-- 进度环 -->
-          <div class="progress-ring" role="status" aria-label="任务完成率">
-            <div class="ring-wrapper">
-              <svg viewBox="0 0 140 140" aria-hidden="true">
-                <circle class="bg" cx="70" cy="70" r="60" />
-                <circle class="fill" id="progressCircle" cx="70" cy="70" r="60"
-                        stroke-dasharray="377" stroke-dashoffset="377" />
-              </svg>
-              <div class="progress-text">
-                <div class="progress-percent" id="percentText">0%</div>
-                <div class="progress-label">完成率</div>
+          <div class="task-list-shell" id="todoLists">
+            <div class="task-section-heading">
+              <h2>进行中</h2>
+              <span id="activeTaskCount">0</span>
+            </div>
+            <ul class="todo-list" id="todoList"></ul>
+
+            <section class="completed-section" id="completedSection">
+              <div class="completed-heading">
+                <button id="completedToggle" type="button" aria-expanded="false" aria-controls="completedTodoList">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg>
+                  <span>已完成</span>
+                  <b id="completedTaskCount">0</b>
+                </button>
+                <button class="clear-btn" id="clearDone" type="button" title="清除已完成" aria-label="清除已完成">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 10v6M14 10v6"/></svg>
+                </button>
               </div>
+              <ul class="todo-list completed-list" id="completedTodoList" hidden></ul>
+            </section>
+          </div>
+
+          <div class="footer">
+            <span id="countText">0 个任务</span>
+          </div>
+        </section>
+
+        <section class="settings-view" id="settingsView" hidden aria-labelledby="settingsTitle">
+          <div class="settings-header">
+            <div>
+              <p class="workspace-label">TODOLIST · 偏好设置</p>
+              <h1 id="settingsTitle">设置</h1>
+              <p>调整工作台的外观与显示方式。</p>
             </div>
+            <button id="settingsCloseBtn" type="button" title="返回任务" aria-label="返回任务">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
           </div>
-        </div>
 
-        <!-- 输入区 -->
-        <div class="input-section">
-          <div class="input-group">
-            <div class="input-wrapper">
-              <svg class="input-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/></svg>
-              <label class="sr-only" for="todoInput">新任务</label>
-              <input type="text" id="todoInput" placeholder="接下来要完成什么？" autocomplete="off" />
+          <section class="settings-section">
+            <h2>外观</h2>
+            <div class="theme-options settings-theme-options">
+              <button class="theme-btn active" data-theme="cyber" title="苔绿工作台" aria-pressed="true"><span class="theme-swatch swatch-cyber"></span><span class="theme-label">苔绿</span></button>
+              <button class="theme-btn" data-theme="midnight" title="极简暗黑" aria-pressed="false"><span class="theme-swatch swatch-midnight"></span><span class="theme-label">夜幕</span></button>
+              <button class="theme-btn" data-theme="light" title="清新浅色" aria-pressed="false"><span class="theme-swatch swatch-light"></span><span class="theme-label">纸白</span></button>
+              <button class="theme-btn" data-theme="warm" title="暖色调" aria-pressed="false"><span class="theme-swatch swatch-warm"></span><span class="theme-label">琥珀</span></button>
+              <button class="theme-btn" data-theme="forest" title="翡翠森林" aria-pressed="false"><span class="theme-swatch swatch-forest"></span><span class="theme-label">林间</span></button>
+              <button class="theme-btn" data-theme="ocean" title="深海海洋" aria-pressed="false"><span class="theme-swatch swatch-ocean"></span><span class="theme-label">潮汐</span></button>
             </div>
-            <button class="add-btn" id="addBtn" type="button" title="添加任务" aria-label="添加任务">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-            </button>
-          </div>
-        </div>
+          </section>
 
-        <!-- 列表工具栏 -->
-        <div class="list-toolbar">
-          <div class="filters">
-            <button class="filter-btn" type="button" data-filter="all" aria-pressed="false">
-              <svg class="filter-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h6v6H4z"/><path d="M14 4h6v6h-6z"/><path d="M4 14h6v6H4z"/><circle cx="17" cy="17" r="3"/></svg>
-              <span>全部</span>
-            </button>
-            <button class="filter-btn active" type="button" data-filter="active" aria-pressed="true">
-              <svg class="filter-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.2-8.6"/><path d="M21 3v6h-6"/></svg>
-              <span>待完成</span>
-            </button>
-            <button class="filter-btn" type="button" data-filter="completed" aria-pressed="false">
-              <svg class="filter-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="8 12 11 15 16 9"/></svg>
-              <span>已完成</span>
-            </button>
-          </div>
-          <button class="time-visibility-toggle" id="timeVisibilityToggle" type="button" title="显示时间信息" aria-label="显示时间信息" aria-pressed="false">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-          </button>
-        </div>
+          <section class="settings-section">
+            <h2>工作区</h2>
+            <label class="setting-row"><span><b>显示日期和时间</b><small>时间精确到分钟</small></span><input id="showSidebarTimeSetting" type="checkbox" checked></label>
+            <label class="setting-row"><span><b>显示每日一句</b><small>保留一条安静的每日提示</small></span><input id="showQuoteSetting" type="checkbox" checked></label>
+            <label class="setting-row"><span><b>显示任务时间</b><small>显示创建和完成时间</small></span><input id="showTaskTimesSetting" type="checkbox"></label>
+          </section>
+        </section>
+      </main>
+    </div>
 
-        <!-- 任务列表 -->
-        <ul class="todo-list" id="todoList"></ul>
-
-        <!-- 底部 -->
-        <div class="footer">
-          <span id="countText">0 个任务</span>
-          <button class="clear-btn" id="clearDone" type="button">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 10v6M14 10v6"/></svg>
-            <span>清除已完成</span>
-          </button>
+    <dialog class="app-dialog" id="categoryDialog">
+      <form id="categoryForm">
+        <div class="dialog-heading">
+          <div><span>任务分组</span><h2 id="categoryDialogTitle">新建分组</h2></div>
+          <button type="button" data-dialog-close="categoryDialog" title="关闭" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
         </div>
-      </div>
-
-      <!-- 侧边栏 -->
-      <div class="side-col">
-        <!-- 日期时间 -->
-        <div class="side-card datetime-widget">
-          <div class="side-card-title">
-            <svg class="side-card-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-            <span>当前时刻</span>
-          </div>
-          <div class="datetime-date" id="dateDisplay"></div>
-          <div class="datetime-time" id="timeDisplay"></div>
-          <div class="datetime-weekday" id="weekdayDisplay"></div>
+        <input id="categoryIdInput" type="hidden">
+        <label for="categoryNameInput">名称</label>
+        <input id="categoryNameInput" type="text" maxlength="30" required autocomplete="off" placeholder="例如：工作">
+        <fieldset class="category-colors"><legend>颜色</legend><div id="categoryColorOptions"></div></fieldset>
+        <div class="dialog-actions">
+          <button class="dialog-danger" id="deleteCategoryBtn" type="button" hidden>删除分组</button>
+          <span></span>
+          <button class="dialog-secondary" type="button" data-dialog-close="categoryDialog">取消</button>
+          <button class="dialog-primary" type="submit">保存</button>
         </div>
+      </form>
+    </dialog>
 
-        <!-- 主题切换 -->
-        <div class="side-card theme-switcher-card">
-          <div class="side-card-title">
-            <svg class="side-card-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="13.5" cy="6.5" r="1"/><circle cx="17.5" cy="10.5" r="1"/><circle cx="8.5" cy="7.5" r="1"/><circle cx="6.5" cy="12.5" r="1"/><path d="M12 3a9 9 0 0 0 0 18h1.5a1.5 1.5 0 0 0 0-3H12a2 2 0 0 1 0-4h4.5A4.5 4.5 0 0 0 21 9.5C21 5.9 17 3 12 3Z"/></svg>
-            <span>外观</span>
-          </div>
-          <div class="theme-options">
-            <button class="theme-btn active" data-theme="cyber" title="苔绿工作台" aria-pressed="true">
-              <span class="theme-swatch swatch-cyber"></span>
-              <span class="theme-label">苔绿</span>
-            </button>
-            <button class="theme-btn" data-theme="midnight" title="极简暗黑" aria-pressed="false">
-              <span class="theme-swatch swatch-midnight"></span>
-              <span class="theme-label">夜幕</span>
-            </button>
-            <button class="theme-btn" data-theme="light" title="清新浅色" aria-pressed="false">
-              <span class="theme-swatch swatch-light"></span>
-              <span class="theme-label">纸白</span>
-            </button>
-            <button class="theme-btn" data-theme="warm" title="暖色调" aria-pressed="false">
-              <span class="theme-swatch swatch-warm"></span>
-              <span class="theme-label">琥珀</span>
-            </button>
-            <button class="theme-btn" data-theme="forest" title="翡翠森林" aria-pressed="false">
-              <span class="theme-swatch swatch-forest"></span>
-              <span class="theme-label">林间</span>
-            </button>
-            <button class="theme-btn" data-theme="ocean" title="深海海洋" aria-pressed="false">
-              <span class="theme-swatch swatch-ocean"></span>
-              <span class="theme-label">潮汐</span>
-            </button>
-          </div>
-        </div>
+    <dialog class="app-dialog" id="moveDialog">
+      <form id="moveForm">
+        <div class="dialog-heading"><div><span>任务操作</span><h2>移动到分组</h2></div><button type="button" data-dialog-close="moveDialog" title="关闭" aria-label="关闭"><svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
+        <input id="moveTodoId" type="hidden">
+        <label for="moveCategorySelect">目标分组</label>
+        <select id="moveCategorySelect"></select>
+        <div class="dialog-actions"><span></span><span></span><button class="dialog-secondary" type="button" data-dialog-close="moveDialog">取消</button><button class="dialog-primary" type="submit">移动</button></div>
+      </form>
+    </dialog>
 
-        <!-- 统计 -->
-        <div class="side-card stats-card">
-          <div class="side-card-title">
-            <svg class="side-card-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19H2"/></svg>
-            <span>完成概览</span>
-          </div>
-          <div class="stat-board">
-            <div class="stat-box">
-              <span class="stat-box-num" id="statTotal">0</span>
-              <span class="stat-box-label">总任务</span>
-            </div>
-            <div class="stat-box">
-              <span class="stat-box-num" id="statDone">0</span>
-              <span class="stat-box-label">已完成</span>
-            </div>
-            <div class="stat-box">
-              <span class="stat-box-num" id="statActive">0</span>
-              <span class="stat-box-label">进行中</span>
-            </div>
-            <div class="stat-box">
-              <span class="stat-box-num" id="statSubs">0</span>
-              <span class="stat-box-label">子任务</span>
-            </div>
-          </div>
-          <div class="stat-bar-wrap">
-            <div class="stat-bar-bg">
-              <div class="stat-bar-fill" id="statBarFill" style="width: 0%"></div>
-            </div>
-            <span class="stat-bar-text" id="statBarText">0%</span>
-          </div>
-        </div>
+    <dialog class="app-dialog bulk-dialog" id="bulkOrganizeDialog">
+      <form id="bulkOrganizeForm">
+        <div class="dialog-heading"><div><span>未分组任务</span><h2>批量整理</h2></div><button type="button" data-dialog-close="bulkOrganizeDialog" title="关闭" aria-label="关闭"><svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
+        <div class="bulk-task-list" id="bulkTaskList"></div>
+        <label for="bulkCategorySelect">移动到</label>
+        <select id="bulkCategorySelect"></select>
+        <div class="dialog-actions"><span></span><span></span><button class="dialog-secondary" type="button" data-dialog-close="bulkOrganizeDialog">取消</button><button class="dialog-primary" type="submit">移动所选任务</button></div>
+      </form>
+    </dialog>
 
-        <!-- 激励语 -->
-        <div class="side-card quote-card">
-          <div class="side-card-title">
-            <svg class="side-card-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M8.5 14.5A7 7 0 1 1 15.5 14.5c-.9.7-1.5 1.5-1.5 2.5h-4c0-1-.6-1.8-1.5-2.5Z"/></svg>
-            <span>今日一句</span>
-          </div>
-          <div class="quote-text" id="quoteText">Stay hungry, stay foolish.</div>
-        </div>
-      </div>
+    <div class="app-toast" id="appToast" role="status" aria-live="polite" hidden>
+      <span id="appToastText"></span>
+      <button id="undoMoveBtn" type="button" hidden>撤销</button>
     </div>
   </div>
 

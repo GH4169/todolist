@@ -7,25 +7,59 @@
 // ---- DOM 引用 ----
 const input = document.getElementById('todoInput');
 const addBtn = document.getElementById('addBtn');
-const list = document.getElementById('todoList');
+const list = document.getElementById('todoLists');
+const activeList = document.getElementById('todoList');
+const completedList = document.getElementById('completedTodoList');
+const completedSection = document.getElementById('completedSection');
+const completedToggle = document.getElementById('completedToggle');
 const countText = document.getElementById('countText');
 const clearBtn = document.getElementById('clearDone');
 const progressCircle = document.getElementById('progressCircle');
 const percentText = document.getElementById('percentText');
-const filterBtns = document.querySelectorAll('.filter-btn');
-const timeVisibilityToggle = document.getElementById('timeVisibilityToggle');
+const workspaceTitle = document.getElementById('workspaceTitle');
+const workspaceSummary = document.getElementById('workspaceSummary');
+const activeTaskCount = document.getElementById('activeTaskCount');
+const completedTaskCount = document.getElementById('completedTaskCount');
+const allTaskCount = document.getElementById('allTaskCount');
+const categoryList = document.getElementById('categoryList');
+const allTasksNav = document.getElementById('allTasksNav');
+const newTaskCategorySelect = document.getElementById('newTaskCategorySelect');
+const composerCategory = document.getElementById('composerCategory');
+const appRoot = document.getElementById('appView');
+const sidebar = document.getElementById('sidebar');
+const sidebarToggle = document.getElementById('sidebarToggle');
+const mobileSidebarToggle = document.getElementById('mobileSidebarToggle');
+const sidebarScrim = document.getElementById('sidebarScrim');
+const taskWorkspace = document.getElementById('taskWorkspace');
+const settingsView = document.getElementById('settingsView');
+const settingsBtn = document.getElementById('settingsBtn');
+const settingsCloseBtn = document.getElementById('settingsCloseBtn');
+const showSidebarTimeSetting = document.getElementById('showSidebarTimeSetting');
+const showQuoteSetting = document.getElementById('showQuoteSetting');
+const showTaskTimesSetting = document.getElementById('showTaskTimesSetting');
 
 const circumference = 2 * Math.PI * 60;
-const DEFAULT_FILTER = 'active';
-const VALID_FILTERS = new Set(['all', 'active', 'completed']);
-const FILTER_STORAGE_PREFIX = 'geek-todos-filter:';
 const TIME_VISIBILITY_STORAGE_PREFIX = 'geek-todos-show-times:';
-let currentFilter = DEFAULT_FILTER;
+const SIDEBAR_COLLAPSED_STORAGE_PREFIX = 'geek-todos-sidebar-collapsed:';
+const COMPLETED_EXPANDED_STORAGE_PREFIX = 'geek-todos-completed-expanded:';
+const SIDEBAR_TIME_STORAGE_PREFIX = 'geek-todos-sidebar-time:';
+const QUOTE_VISIBLE_STORAGE_PREFIX = 'geek-todos-quote-visible:';
+const ALL_CATEGORY_ID = 'all';
+const UNASSIGNED_CATEGORY_ID = 'unassigned';
+const CATEGORY_COLORS = ['#9fc79f', '#78b8c5', '#e6b65f', '#ef806d', '#b8a7d9', '#8fa58f'];
+let activeCategoryId = ALL_CATEGORY_ID;
 let showTaskTimes = false;
+let completedExpanded = false;
+let sidebarCollapsed = false;
+let showSidebarTime = true;
+let showSidebarQuote = true;
+let lastMoveUndo = null;
+let toastTimer = null;
 
 // 记录展开的描述区域 key: "todoId" 或 "todoId:subId"
 let openDescriptions = new Set();
 let todoChannel = null;
+let categoryChannel = null;
 let realtimeRefreshTimer = null;
 const pendingRealtimeEchoes = new Map();
 const pendingDescriptionSaves = new Map();
@@ -63,38 +97,24 @@ function showCloudError(error) {
   window.alert(`云端同步失败：${error.message || '请检查网络和 Supabase 配置'}`);
 }
 
-function syncFilterButtons() {
-  filterBtns.forEach(btn => {
-    const isActive = btn.dataset.filter === currentFilter;
-    btn.classList.toggle('active', isActive);
-    btn.setAttribute('aria-pressed', String(isActive));
-  });
-}
-
-function getSavedFilter(userId) {
-  if (!userId) return DEFAULT_FILTER;
+function getSavedBoolean(prefix, userId, fallback) {
+  if (!userId) return fallback;
   try {
-    const savedFilter = localStorage.getItem(`${FILTER_STORAGE_PREFIX}${userId}`);
-    return VALID_FILTERS.has(savedFilter) ? savedFilter : DEFAULT_FILTER;
+    const value = localStorage.getItem(`${prefix}${userId}`);
+    return value === null ? fallback : value === 'true';
   } catch (error) {
-    console.warn('读取筛选偏好失败:', error);
-    return DEFAULT_FILTER;
+    console.warn('读取界面偏好失败:', error);
+    return fallback;
   }
 }
 
-function saveFilter(filter) {
-  if (!activeUserId || !VALID_FILTERS.has(filter)) return;
+function saveBoolean(prefix, value) {
+  if (!activeUserId) return;
   try {
-    localStorage.setItem(`${FILTER_STORAGE_PREFIX}${activeUserId}`, filter);
+    localStorage.setItem(`${prefix}${activeUserId}`, String(Boolean(value)));
   } catch (error) {
-    console.warn('保存筛选偏好失败:', error);
+    console.warn('保存界面偏好失败:', error);
   }
-}
-
-function setCurrentFilter(filter, { persist = false } = {}) {
-  currentFilter = VALID_FILTERS.has(filter) ? filter : DEFAULT_FILTER;
-  syncFilterButtons();
-  if (persist) saveFilter(currentFilter);
 }
 
 function getSavedTimeVisibility(userId) {
@@ -119,20 +139,46 @@ function saveTimeVisibility() {
 function setTimeVisibility(visible, { persist = false } = {}) {
   showTaskTimes = Boolean(visible);
   document.body.classList.toggle('show-task-times', showTaskTimes);
-
-  const actionLabel = showTaskTimes ? '隐藏时间信息' : '显示时间信息';
-  timeVisibilityToggle.classList.toggle('active', showTaskTimes);
-  timeVisibilityToggle.setAttribute('aria-pressed', String(showTaskTimes));
-  timeVisibilityToggle.setAttribute('aria-label', actionLabel);
-  timeVisibilityToggle.title = actionLabel;
+  showTaskTimesSetting.checked = showTaskTimes;
 
   if (persist) saveTimeVisibility();
+}
+
+function setSidebarCollapsed(collapsed, { persist = false } = {}) {
+  sidebarCollapsed = Boolean(collapsed);
+  appRoot.classList.toggle('sidebar-collapsed', sidebarCollapsed);
+  sidebarToggle.setAttribute('aria-expanded', String(!sidebarCollapsed));
+  sidebarToggle.setAttribute('aria-label', sidebarCollapsed ? '展开侧栏' : '收起侧栏');
+  sidebarToggle.title = sidebarCollapsed ? '展开侧栏' : '收起侧栏';
+  if (persist) saveBoolean(SIDEBAR_COLLAPSED_STORAGE_PREFIX, sidebarCollapsed);
+}
+
+function setCompletedExpanded(expanded, { persist = false } = {}) {
+  completedExpanded = Boolean(expanded);
+  completedList.hidden = !completedExpanded;
+  completedSection.classList.toggle('expanded', completedExpanded);
+  completedToggle.setAttribute('aria-expanded', String(completedExpanded));
+  if (persist) saveBoolean(COMPLETED_EXPANDED_STORAGE_PREFIX, completedExpanded);
+}
+
+function setSidebarTimeVisible(visible, { persist = false } = {}) {
+  showSidebarTime = Boolean(visible);
+  document.getElementById('sidebarDatetime').hidden = !showSidebarTime;
+  showSidebarTimeSetting.checked = showSidebarTime;
+  if (persist) saveBoolean(SIDEBAR_TIME_STORAGE_PREFIX, showSidebarTime);
+}
+
+function setSidebarQuoteVisible(visible, { persist = false } = {}) {
+  showSidebarQuote = Boolean(visible);
+  document.getElementById('sidebarQuote').hidden = !showSidebarQuote;
+  showQuoteSetting.checked = showSidebarQuote;
+  if (persist) saveBoolean(QUOTE_VISIBLE_STORAGE_PREFIX, showSidebarQuote);
 }
 
 async function restoreCloudState(error) {
   showCloudError(error);
   try {
-    await loadTodos();
+    await Promise.all([loadCategories(), loadTodos()]);
     openDescriptions = loadOpenDescriptions(todos);
     render();
   } catch (reloadError) {
@@ -227,6 +273,112 @@ function compareTodoOrder(a, b) {
   return a.parentId ? a.createdAt - b.createdAt : b.createdAt - a.createdAt;
 }
 
+function getCategoryById(id) {
+  return categories.find(category => category.id === id) || null;
+}
+
+function getCategoryName(categoryId) {
+  if (!categoryId) return '未分组';
+  return getCategoryById(categoryId)?.name || '未分组';
+}
+
+function getCategoryColor(categoryId) {
+  return getCategoryById(categoryId)?.color || '#8fa58f';
+}
+
+function matchesCategory(todo, categoryId = activeCategoryId) {
+  if (categoryId === ALL_CATEGORY_ID) return true;
+  if (categoryId === UNASSIGNED_CATEGORY_ID) return !todo.categoryId;
+  return todo.categoryId === categoryId;
+}
+
+function getScopedTodos() {
+  return todos.filter(todo => matchesCategory(todo));
+}
+
+function categoryOptionHtml(selectedCategoryId = null) {
+  return [
+    `<option value="" ${selectedCategoryId ? '' : 'selected'}>未分组</option>`,
+    ...categories.map(category => (
+      `<option value="${category.id}" ${category.id === selectedCategoryId ? 'selected' : ''}>${escapeHtml(category.name)}</option>`
+    )),
+  ].join('');
+}
+
+function syncCategorySelects() {
+  const composerValue = newTaskCategorySelect.value;
+  newTaskCategorySelect.innerHTML = categoryOptionHtml(composerValue || null);
+  if (composerValue && getCategoryById(composerValue)) newTaskCategorySelect.value = composerValue;
+
+  const moveSelect = document.getElementById('moveCategorySelect');
+  const bulkSelect = document.getElementById('bulkCategorySelect');
+  moveSelect.innerHTML = categoryOptionHtml();
+  bulkSelect.innerHTML = categories.length > 0
+    ? categories.map(category => `<option value="${category.id}">${escapeHtml(category.name)}</option>`).join('')
+    : '<option value="" disabled>请先新建分组</option>';
+}
+
+function syncComposerCategory() {
+  const isAllTasks = activeCategoryId === ALL_CATEGORY_ID;
+  composerCategory.hidden = !isAllTasks;
+  if (isAllTasks && !newTaskCategorySelect.value) newTaskCategorySelect.value = '';
+
+  const targetName = activeCategoryId === ALL_CATEGORY_ID
+    ? getCategoryName(newTaskCategorySelect.value || null)
+    : (activeCategoryId === UNASSIGNED_CATEGORY_ID ? '未分组' : getCategoryName(activeCategoryId));
+  input.placeholder = `添加到「${targetName}」`;
+}
+
+function setActiveCategory(categoryId) {
+  const validId = categoryId === ALL_CATEGORY_ID
+    || categoryId === UNASSIGNED_CATEGORY_ID
+    || Boolean(getCategoryById(categoryId));
+  activeCategoryId = validId ? categoryId : ALL_CATEGORY_ID;
+  taskWorkspace.hidden = false;
+  settingsView.hidden = true;
+  settingsBtn.classList.remove('active');
+  closeMobileSidebar();
+  render();
+}
+
+function renderCategoryNavigation() {
+  const unassignedCount = todos.filter(todo => !todo.categoryId).length;
+  const unassignedActive = activeCategoryId === UNASSIGNED_CATEGORY_ID;
+  const unassignedRow = `
+    <li class="category-row system-category-row" data-drop-category-id="${UNASSIGNED_CATEGORY_ID}">
+      <button class="group-nav-item ${unassignedActive ? 'active' : ''}" type="button" data-category-id="${UNASSIGNED_CATEGORY_ID}" ${unassignedActive ? 'aria-current="page"' : ''}>
+        <span class="category-dot unassigned-dot" aria-hidden="true"></span>
+        <span>未分组</span>
+        <b>${unassignedCount}</b>
+      </button>
+      ${unassignedCount > 0 ? `<button class="category-row-action organize-category-btn" type="button" data-action="bulk-organize" title="批量整理未分组任务" aria-label="批量整理未分组任务">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13"/><path d="m3 6 1 1 2-2M3 12l1 1 2-2M3 18l1 1 2-2"/></svg>
+      </button>` : ''}
+    </li>`;
+
+  const customRows = categories.map(category => {
+    const count = todos.filter(todo => todo.categoryId === category.id).length;
+    const isActive = activeCategoryId === category.id;
+    return `
+      <li class="category-row" draggable="true" data-category-row-id="${category.id}" data-drop-category-id="${category.id}">
+        <button class="group-nav-item ${isActive ? 'active' : ''}" type="button" data-category-id="${category.id}" ${isActive ? 'aria-current="page"' : ''}>
+          <span class="category-dot" style="--category-color: ${category.color}" aria-hidden="true"></span>
+          <span>${escapeHtml(category.name)}</span>
+          <b>${count}</b>
+        </button>
+        <button class="category-row-action" type="button" data-action="edit-category" data-category-id="${category.id}" title="编辑${escapeHtml(category.name)}" aria-label="编辑${escapeHtml(category.name)}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+        </button>
+      </li>`;
+  }).join('');
+
+  categoryList.innerHTML = unassignedRow + customRows;
+  allTasksNav.classList.toggle('active', activeCategoryId === ALL_CATEGORY_ID);
+  allTasksNav.toggleAttribute('aria-current', activeCategoryId === ALL_CATEGORY_ID);
+  allTaskCount.textContent = todos.length;
+  syncCategorySelects();
+}
+
 function syncOpenDescription(item) {
   const key = item.parentId ? `${item.parentId}:${item.id}` : item.id;
   if (item.descriptionOpen) openDescriptions.add(key);
@@ -310,17 +462,8 @@ function removeTodoItem(id, parentId) {
 }
 
 function syncTodoCompletionDom(todo) {
-  let todoElement = getTodoElement(todo.id);
-  if (!isTodoVisible(todo)) {
-    todoElement?.remove();
-    if (!list.querySelector(':scope > .todo-item')) list.innerHTML = getEmptyStateHtml();
-    return null;
-  }
-
-  if (!todoElement) {
-    renderChangedTodos(new Set([todo.id]));
-    todoElement = getTodoElement(todo.id);
-  }
+  render();
+  const todoElement = getTodoElement(todo.id);
   if (!todoElement) return null;
 
   todoElement.classList.toggle('done', todo.done);
@@ -639,8 +782,11 @@ function syncDescriptionDom(todoId, subId) {
 async function addTodo() {
   const text = input.value.trim();
   if (!text) return;
+  const categoryId = activeCategoryId === ALL_CATEGORY_ID
+    ? (newTaskCategorySelect.value || null)
+    : (activeCategoryId === UNASSIGNED_CATEGORY_ID ? null : activeCategoryId);
   try {
-    const todo = await createTodoRecord({ text, position: 0 });
+    const todo = await createTodoRecord({ text, categoryId, position: 0 });
     const alreadyPresent = Boolean(findTodoItem(todo.id));
     rememberLocalCreate(todo.id);
     const affectedTodoIds = upsertTodoItem(todo);
@@ -887,7 +1033,7 @@ async function deleteTodo(id) {
 }
 
 async function clearCompleted() {
-  const doneIds = new Set(todos.filter(t => t.done).map(t => t.id));
+  const doneIds = new Set(getScopedTodos().filter(t => t.done).map(t => t.id));
   const deletedIds = todos
     .filter(todo => doneIds.has(todo.id))
     .flatMap(todo => [todo.id, ...todo.subtasks.map(subtask => subtask.id)]);
@@ -1083,19 +1229,20 @@ function startEditDescription(todoId, subId, { isNewDescription = false } = {}) 
 // ============================================================
 
 function updateProgress() {
-  if (todos.length === 0) {
+  const scopedTodos = getScopedTodos();
+  if (scopedTodos.length === 0) {
     progressCircle.style.strokeDashoffset = circumference;
     percentText.textContent = '0%';
     return;
   }
-  const allSubtasks = todos.flatMap(t => t.subtasks);
-  const totalItems = todos.length + allSubtasks.length;
+  const allSubtasks = scopedTodos.flatMap(t => t.subtasks);
+  const totalItems = scopedTodos.length + allSubtasks.length;
   if (totalItems === 0) {
     progressCircle.style.strokeDashoffset = circumference;
     percentText.textContent = '0%';
     return;
   }
-  const doneTodos = todos.filter(t => t.done).length;
+  const doneTodos = scopedTodos.filter(t => t.done).length;
   const doneSubtasks = allSubtasks.filter(s => s.done).length;
   const totalDone = doneTodos + doneSubtasks;
   const percent = Math.round((totalDone / totalItems) * 100);
@@ -1105,22 +1252,9 @@ function updateProgress() {
 }
 
 function updateSideStats() {
-  const total = todos.length;
-  const done = todos.filter(t => t.done).length;
-  const active = total - done;
-  const subs = todos.reduce((sum, t) => sum + t.subtasks.length, 0);
-
-  document.getElementById('statTotal').textContent = total;
-  document.getElementById('statActive').textContent = active;
-  document.getElementById('statDone').textContent = done;
-  document.getElementById('statSubs').textContent = subs;
-
-  // 进度条
-  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-  const fill = document.getElementById('statBarFill');
-  const text = document.getElementById('statBarText');
-  if (fill) fill.style.width = pct + '%';
-  if (text) text.textContent = pct + '%';
+  const scopedTodos = getScopedTodos();
+  const done = scopedTodos.filter(todo => todo.done).length;
+  workspaceSummary.textContent = `${scopedTodos.length - done} 个进行中 · ${done} 个已完成`;
 }
 
 // ============================================================
@@ -1145,21 +1279,19 @@ function escapeHtml(str) {
 // ============================================================
 
 function isTodoVisible(todo) {
-  if (currentFilter === 'active') return !todo.done;
-  if (currentFilter === 'completed') return todo.done;
-  return true;
+  return matchesCategory(todo);
 }
 
 function getVisibleTodos() {
-  return todos.filter(isTodoVisible);
+  return getScopedTodos();
 }
 
-function getEmptyStateHtml() {
-  const icon = todos.length === 0
+function getEmptyStateHtml(scopedTodos = getScopedTodos()) {
+  const icon = scopedTodos.length === 0
     ? '<svg viewBox="0 0 48 48" aria-hidden="true"><rect x="9" y="8" width="30" height="32" rx="5"/><path d="M16 18h16M16 25h10M16 32h7"/><path class="empty-accent" d="m29 31 3 3 7-8"/></svg>'
     : '<svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="16"/><path class="empty-accent" d="m16 24 5 5 11-12"/></svg>';
-  const title = todos.length === 0 ? '今天从哪里开始？' : '这一栏已经清空';
-  const desc = todos.length === 0 ? '先写下一件值得完成的事' : '切换到其他分类，或添加新的任务';
+  const title = scopedTodos.length === 0 ? '这个分组还没有任务' : '进行中的任务已经清空';
+  const desc = scopedTodos.length === 0 ? '先写下一件值得完成的事' : '已完成任务收在下方';
   return `
     <li class="empty-state">
       <div class="empty-icon">${icon}</div>
@@ -1254,6 +1386,9 @@ function renderTodoHtml(t) {
   const subtaskCount = t.subtasks.length;
   const doneCount = t.subtasks.filter(s => s.done).length;
   const subAddRowHtml = renderSubtaskAddRowHtml(t.id);
+  const categoryBadgeHtml = activeCategoryId === ALL_CATEGORY_ID
+    ? `<span class="task-category-badge"><span style="--category-color: ${getCategoryColor(t.categoryId)}"></span>${escapeHtml(getCategoryName(t.categoryId))}</span>`
+    : '';
 
   const subtasksHtml = subtaskCount > 0 ? `
     <div class="subtask-section ${t.collapsed ? 'collapsed' : ''}">
@@ -1278,7 +1413,7 @@ function renderTodoHtml(t) {
         </button>
         <div class="todo-body">
           <div class="todo-text">${escapeHtml(t.text)}</div>
-          <div class="task-time"><span class="task-time-label">创建于 ${formatTime(t.createdAt)}${t.done && t.completedAt ? ' · 完成于 ' + formatTime(t.completedAt) : ''}</span>${t.collapsed && subtaskCount > 0 ? `<span class="task-progress-meta ${doneCount === subtaskCount ? 'is-complete' : ''}" aria-label="子任务完成情况：${doneCount}/${subtaskCount}">子任务 ${doneCount}/${subtaskCount}</span>` : ''}</div>
+          <div class="task-meta">${categoryBadgeHtml}<div class="task-time"><span class="task-time-label">创建于 ${formatTime(t.createdAt)}${t.done && t.completedAt ? ' · 完成于 ' + formatTime(t.completedAt) : ''}</span>${t.collapsed && subtaskCount > 0 ? `<span class="task-progress-meta ${doneCount === subtaskCount ? 'is-complete' : ''}" aria-label="子任务完成情况：${doneCount}/${subtaskCount}">子任务 ${doneCount}/${subtaskCount}</span>` : ''}</div></div>
           ${t.description || openDescriptions.has(t.id) ? `<div class="desc-section" data-id="${t.id}" style="display: ${openDescriptions.has(t.id) ? 'block' : 'none'};">
             <div class="desc-display">${t.description ? escapeHtml(t.description) : ''}</div>
           </div>` : ''}
@@ -1290,6 +1425,9 @@ function renderTodoHtml(t) {
           </button>
           <button class="action-btn edit-btn" type="button" data-action="start-edit" data-id="${t.id}" title="编辑标题" aria-label="编辑标题">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>
+          </button>
+          <button class="action-btn move-btn" type="button" data-action="move-group" data-id="${t.id}" title="移动到分组" aria-label="移动到分组">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h7l2 2h9v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="m10 13 2 2 4-4"/></svg>
           </button>
           <button class="action-btn desc-btn ${t.description ? 'has-desc' : ''} ${openDescriptions.has(t.id) ? 'desc-open' : ''}" type="button" data-action="toggle-desc" data-id="${t.id}" title="详情描述" aria-label="详情描述">
             <svg class="desc-chevron" viewBox="0 0 12 12" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
@@ -1319,62 +1457,52 @@ function createSubtaskElement(todo, subtask) {
 }
 
 function getTodoElement(id) {
-  return [...list.children].find(element => (
-    element.classList.contains('todo-item') && element.dataset.id === id
-  ));
+  return [...list.querySelectorAll('.todo-item')].find(element => element.dataset.id === id) || null;
 }
 
 function updateListSummary() {
-  const activeCount = todos.filter(t => !t.done).length;
-  const total = todos.length;
-  countText.textContent = total === 0 ? '暂无任务' : `待办 ${activeCount} · 共 ${total} 个`;
-  clearBtn.style.display = todos.some(t => t.done) ? 'inline-flex' : 'none';
+  const scopedTodos = getScopedTodos();
+  const activeCountValue = scopedTodos.filter(todo => !todo.done).length;
+  const completedCountValue = scopedTodos.length - activeCountValue;
+  countText.textContent = scopedTodos.length === 0
+    ? '暂无任务'
+    : `进行中 ${activeCountValue} · 共 ${scopedTodos.length} 个父任务`;
+  activeTaskCount.textContent = activeCountValue;
+  completedTaskCount.textContent = completedCountValue;
+  clearBtn.style.display = completedCountValue > 0 ? 'inline-grid' : 'none';
   updateProgress();
   updateSideStats();
 }
 
 function render() {
-  const visibleTodos = getVisibleTodos();
-  list.innerHTML = visibleTodos.length > 0
-    ? visibleTodos.map(renderTodoHtml).join('')
-    : getEmptyStateHtml();
+  if (activeCategoryId !== ALL_CATEGORY_ID
+    && activeCategoryId !== UNASSIGNED_CATEGORY_ID
+    && !getCategoryById(activeCategoryId)) {
+    activeCategoryId = UNASSIGNED_CATEGORY_ID;
+  }
+  const scopedTodos = getVisibleTodos();
+  const activeTodos = scopedTodos.filter(todo => !todo.done);
+  const completedTodos = scopedTodos.filter(todo => todo.done);
+
+  activeList.innerHTML = activeTodos.length > 0
+    ? activeTodos.map(renderTodoHtml).join('')
+    : getEmptyStateHtml(scopedTodos);
+  completedList.innerHTML = completedTodos.map(renderTodoHtml).join('');
+  completedSection.hidden = completedTodos.length === 0;
+  completedList.hidden = !completedExpanded;
+
+  if (activeCategoryId === ALL_CATEGORY_ID) workspaceTitle.textContent = '全部任务';
+  else if (activeCategoryId === UNASSIGNED_CATEGORY_ID) workspaceTitle.textContent = '未分组';
+  else workspaceTitle.textContent = getCategoryName(activeCategoryId);
+
+  renderCategoryNavigation();
+  syncComposerCategory();
   updateListSummary();
 }
 
 function renderChangedTodos(todoIds) {
-  const visibleTodos = getVisibleTodos();
-  if (visibleTodos.length === 0) {
-    list.innerHTML = getEmptyStateHtml();
-    updateListSummary();
-    return;
-  }
-
-  list.querySelector(':scope > .empty-state')?.remove();
-  for (const id of todoIds) {
-    const existing = getTodoElement(id);
-    const todo = todos.find(item => item.id === id);
-    if (!todo || !isTodoVisible(todo)) {
-      existing?.remove();
-      continue;
-    }
-
-    const replacement = createTodoElement(todo);
-    if (existing) existing.replaceWith(replacement);
-    else list.appendChild(replacement);
-  }
-
-  for (const todo of visibleTodos) {
-    if (!getTodoElement(todo.id)) list.appendChild(createTodoElement(todo));
-  }
-
-  let nextElement = list.firstElementChild;
-  for (const todo of visibleTodos) {
-    const element = getTodoElement(todo.id);
-    if (element !== nextElement) list.insertBefore(element, nextElement);
-    nextElement = element.nextElementSibling;
-  }
-
-  updateListSummary();
+  void todoIds;
+  render();
 }
 
 // ============================================================
@@ -1506,11 +1634,227 @@ function startEditSubtask(todoId, subId) {
 }
 
 // ============================================================
-// 拖拽排序
+// 分组、设置与侧栏交互
+// ============================================================
+
+function showToast(message, undoAction = null) {
+  const toast = document.getElementById('appToast');
+  const undoButton = document.getElementById('undoMoveBtn');
+  clearTimeout(toastTimer);
+  document.getElementById('appToastText').textContent = message;
+  lastMoveUndo = undoAction;
+  undoButton.hidden = !undoAction;
+  toast.hidden = false;
+  toastTimer = setTimeout(() => {
+    toast.hidden = true;
+    lastMoveUndo = null;
+  }, 5000);
+}
+
+function closeMobileSidebar() {
+  appRoot.classList.remove('mobile-sidebar-open');
+  mobileSidebarToggle.setAttribute('aria-expanded', 'false');
+}
+
+function openMobileSidebar() {
+  appRoot.classList.add('mobile-sidebar-open');
+  mobileSidebarToggle.setAttribute('aria-expanded', 'true');
+}
+
+function showTaskWorkspace() {
+  taskWorkspace.hidden = false;
+  settingsView.hidden = true;
+  settingsBtn.classList.remove('active');
+  closeMobileSidebar();
+}
+
+function showSettings() {
+  taskWorkspace.hidden = true;
+  settingsView.hidden = false;
+  settingsBtn.classList.add('active');
+  closeMobileSidebar();
+}
+
+function closeDialog(id) {
+  document.getElementById(id)?.close();
+}
+
+function openCategoryDialog(category = null) {
+  const dialog = document.getElementById('categoryDialog');
+  document.getElementById('categoryDialogTitle').textContent = category ? '编辑分组' : '新建分组';
+  document.getElementById('categoryIdInput').value = category?.id || '';
+  document.getElementById('categoryNameInput').value = category?.name || '';
+  document.getElementById('deleteCategoryBtn').hidden = !category;
+
+  const color = category?.color || CATEGORY_COLORS[categories.length % CATEGORY_COLORS.length];
+  document.getElementById('categoryColorOptions').innerHTML = CATEGORY_COLORS.map(value => `
+    <label class="category-color-option" title="${value}">
+      <input type="radio" name="categoryColor" value="${value}" ${value === color ? 'checked' : ''}>
+      <span style="--category-color: ${value}"></span>
+    </label>`).join('');
+
+  dialog.showModal();
+  requestAnimationFrame(() => document.getElementById('categoryNameInput').focus());
+}
+
+async function submitCategoryForm(event) {
+  event.preventDefault();
+  const id = document.getElementById('categoryIdInput').value;
+  const name = document.getElementById('categoryNameInput').value.trim();
+  const color = document.querySelector('input[name="categoryColor"]:checked')?.value || CATEGORY_COLORS[0];
+  if (!name) return;
+
+  const duplicate = categories.some(category => category.id !== id && category.name.localeCompare(name, 'zh-CN', { sensitivity: 'accent' }) === 0);
+  if (duplicate) {
+    showToast('已经有同名分组');
+    document.getElementById('categoryNameInput').focus();
+    return;
+  }
+
+  try {
+    if (id) {
+      const updated = await updateCategoryRecord(id, { name, color });
+      const category = getCategoryById(id);
+      if (category) Object.assign(category, updated);
+    } else {
+      const created = await createCategoryRecord({ name, color, position: categories.length });
+      categories.push(created);
+      activeCategoryId = created.id;
+    }
+    closeDialog('categoryDialog');
+    render();
+  } catch (error) {
+    showCloudError(error);
+  }
+}
+
+async function deleteCurrentCategory() {
+  const id = document.getElementById('categoryIdInput').value;
+  const category = getCategoryById(id);
+  if (!category || !window.confirm(`删除“${category.name}”？其中的任务会回到“未分组”。`)) return;
+
+  try {
+    await deleteCategoryRecord(id);
+    categories = categories.filter(item => item.id !== id);
+    todos.forEach(todo => {
+      if (todo.categoryId === id) todo.categoryId = null;
+    });
+    if (activeCategoryId === id) activeCategoryId = UNASSIGNED_CATEGORY_ID;
+    closeDialog('categoryDialog');
+    render();
+    showToast(`已删除“${category.name}”，任务已移到未分组`);
+  } catch (error) {
+    await restoreCloudState(error);
+  }
+}
+
+function openMoveDialog(todoId) {
+  const todo = todos.find(item => item.id === todoId);
+  if (!todo) return;
+  document.getElementById('moveTodoId').value = todoId;
+  const select = document.getElementById('moveCategorySelect');
+  select.innerHTML = categoryOptionHtml(todo.categoryId);
+  select.value = todo.categoryId || '';
+  document.getElementById('moveDialog').showModal();
+  requestAnimationFrame(() => select.focus());
+}
+
+async function moveTodoToCategory(todoId, categoryId, { allowUndo = true, insertIndex = null } = {}) {
+  const todo = todos.find(item => item.id === todoId);
+  const normalizedCategoryId = categoryId || null;
+  if (!todo || todo.categoryId === normalizedCategoryId) return false;
+  if (normalizedCategoryId && !getCategoryById(normalizedCategoryId)) return false;
+
+  const oldCategoryId = todo.categoryId;
+  const oldIndex = todos.indexOf(todo);
+  todos.splice(oldIndex, 1);
+  todo.categoryId = normalizedCategoryId;
+  if (Number.isInteger(insertIndex)) todos.splice(Math.min(insertIndex, todos.length), 0, todo);
+  else todos.push(todo);
+  render();
+
+  try {
+    await updateTodoWithRealtimeEcho(todoId, { categoryId: normalizedCategoryId });
+    await saveParentTodoPositions(updateTodoWithRealtimeEcho);
+    const destination = getCategoryName(normalizedCategoryId);
+    showToast(`已移动到“${destination}”`, allowUndo
+      ? () => moveTodoToCategory(todoId, oldCategoryId, { allowUndo: false, insertIndex: oldIndex })
+      : null);
+    return true;
+  } catch (error) {
+    await restoreCloudState(error);
+    return false;
+  }
+}
+
+async function submitMoveForm(event) {
+  event.preventDefault();
+  const todoId = document.getElementById('moveTodoId').value;
+  const categoryId = document.getElementById('moveCategorySelect').value || null;
+  closeDialog('moveDialog');
+  await moveTodoToCategory(todoId, categoryId);
+}
+
+function openBulkOrganizeDialog() {
+  const unassignedTodos = todos.filter(todo => !todo.categoryId);
+  const dialog = document.getElementById('bulkOrganizeDialog');
+  const taskContainer = document.getElementById('bulkTaskList');
+  taskContainer.innerHTML = unassignedTodos.length > 0
+    ? unassignedTodos.map(todo => `<label><input type="checkbox" name="bulkTodo" value="${todo.id}"><span>${escapeHtml(todo.text)}</span></label>`).join('')
+    : '<p>没有需要整理的任务。</p>';
+  document.getElementById('bulkCategorySelect').innerHTML = categories.length > 0
+    ? categories.map(category => `<option value="${category.id}">${escapeHtml(category.name)}</option>`).join('')
+    : '<option value="" disabled>请先新建分组</option>';
+  dialog.querySelector('.dialog-primary').disabled = categories.length === 0 || unassignedTodos.length === 0;
+  dialog.showModal();
+}
+
+async function submitBulkOrganize(event) {
+  event.preventDefault();
+  const ids = [...document.querySelectorAll('input[name="bulkTodo"]:checked')].map(inputElement => inputElement.value);
+  const categoryId = document.getElementById('bulkCategorySelect').value;
+  if (ids.length === 0 || !categoryId) {
+    showToast('请选择要整理的任务');
+    return;
+  }
+
+  const snapshots = ids.map(id => {
+    const todo = todos.find(item => item.id === id);
+    return { id, categoryId: todo?.categoryId || null };
+  });
+  ids.forEach(id => {
+    const todo = todos.find(item => item.id === id);
+    if (todo) todo.categoryId = categoryId;
+  });
+  closeDialog('bulkOrganizeDialog');
+  render();
+
+  try {
+    await Promise.all(ids.map(id => updateTodoWithRealtimeEcho(id, { categoryId })));
+    showToast(`已整理 ${ids.length} 个任务到“${getCategoryName(categoryId)}”`, async () => {
+      snapshots.forEach(snapshot => {
+        const todo = todos.find(item => item.id === snapshot.id);
+        if (todo) todo.categoryId = snapshot.categoryId;
+      });
+      render();
+      try {
+        await Promise.all(snapshots.map(snapshot => updateTodoWithRealtimeEcho(snapshot.id, { categoryId: snapshot.categoryId })));
+      } catch (error) {
+        await restoreCloudState(error);
+      }
+    });
+  } catch (error) {
+    await restoreCloudState(error);
+  }
+}
+
+// ============================================================
+// 拖拽排序与分组
 // ============================================================
 
 let draggedId = null;   // 父任务拖拽
 let draggedSub = null;  // 子任务拖拽 { todoId, subId }
+let draggedCategoryId = null;
 
 list.addEventListener('dragstart', (e) => {
   // 优先检查子任务拖拽
@@ -1536,6 +1880,7 @@ list.addEventListener('dragstart', (e) => {
   }
   draggedId = todoItem.dataset.id;
   todoItem.classList.add('dragging');
+  if (sidebarCollapsed) appRoot.classList.add('sidebar-drag-open');
   e.dataTransfer.effectAllowed = 'move';
   e.dataTransfer.setData('text/plain', draggedId);
 });
@@ -1547,8 +1892,9 @@ list.addEventListener('dragend', (e) => {
   if (subItem) subItem.classList.remove('dragging');
   draggedId = null;
   draggedSub = null;
-  document.querySelectorAll('.drag-over, .subtask-drag-over').forEach(el => {
-    el.classList.remove('drag-over', 'subtask-drag-over');
+  appRoot.classList.remove('sidebar-drag-open');
+  document.querySelectorAll('.drag-over, .subtask-drag-over, .category-drop-target').forEach(el => {
+    el.classList.remove('drag-over', 'subtask-drag-over', 'category-drop-target');
   });
 });
 
@@ -1567,7 +1913,12 @@ list.addEventListener('dragover', (e) => {
     }
   } else if (draggedId) {
     const todoTarget = e.target.closest('.todo-item');
-    if (todoTarget && todoTarget.dataset.id !== draggedId) {
+    const draggedTodo = todos.find(todo => todo.id === draggedId);
+    const targetTodo = todoTarget ? todos.find(todo => todo.id === todoTarget.dataset.id) : null;
+    if (todoTarget && targetTodo && draggedTodo
+      && targetTodo.id !== draggedTodo.id
+      && targetTodo.done === draggedTodo.done
+      && targetTodo.categoryId === draggedTodo.categoryId) {
       todoTarget.classList.add('drag-over');
     }
   }
@@ -1621,6 +1972,12 @@ list.addEventListener('drop', async (e) => {
   const targetId = targetItem.dataset.id;
   if (targetId === draggedId) return;
 
+  const draggedTodo = todos.find(todo => todo.id === draggedId);
+  const targetTodo = todos.find(todo => todo.id === targetId);
+  if (!draggedTodo || !targetTodo
+    || draggedTodo.done !== targetTodo.done
+    || draggedTodo.categoryId !== targetTodo.categoryId) return;
+
   const fromIndex = todos.findIndex(t => t.id === draggedId);
   const toIndex = todos.findIndex(t => t.id === targetId);
   if (fromIndex === -1 || toIndex === -1) return;
@@ -1630,7 +1987,7 @@ list.addEventListener('drop', async (e) => {
 
   render();
   try {
-    await saveTodoPositions(updateTodoWithRealtimeEcho);
+    await saveParentTodoPositions(updateTodoWithRealtimeEcho);
   } catch (error) {
     await restoreCloudState(error);
   }
@@ -1670,6 +2027,9 @@ list.addEventListener('click', (e) => {
   } else if (action === 'start-edit') {
     e.stopPropagation();
     startEditTitle(actionEl.dataset.id);
+  } else if (action === 'move-group') {
+    e.stopPropagation();
+    openMoveDialog(actionEl.dataset.id);
   } else if (action === 'toggle-collapse') {
     e.stopPropagation();
     const t = todos.find(t => t.id === actionEl.dataset.id);
@@ -1752,20 +2112,104 @@ input.addEventListener('keydown', (e) => {
   }
 });
 
-// 过滤按钮
-filterBtns.forEach(btn => {
-  btn.addEventListener('click', () => {
-    setCurrentFilter(btn.dataset.filter, { persist: true });
-    render();
+newTaskCategorySelect.addEventListener('change', syncComposerCategory);
+completedToggle.addEventListener('click', () => setCompletedExpanded(!completedExpanded, { persist: true }));
+clearBtn.addEventListener('click', clearCompleted);
+
+allTasksNav.addEventListener('click', () => setActiveCategory(ALL_CATEGORY_ID));
+document.getElementById('addCategoryBtn').addEventListener('click', () => openCategoryDialog());
+
+categoryList.addEventListener('click', (event) => {
+  const actionButton = event.target.closest('[data-action]');
+  if (actionButton?.dataset.action === 'edit-category') {
+    openCategoryDialog(getCategoryById(actionButton.dataset.categoryId));
+    return;
+  }
+  if (actionButton?.dataset.action === 'bulk-organize') {
+    openBulkOrganizeDialog();
+    return;
+  }
+  const categoryButton = event.target.closest('[data-category-id]');
+  if (categoryButton) setActiveCategory(categoryButton.dataset.categoryId);
+});
+
+categoryList.addEventListener('dragstart', (event) => {
+  const row = event.target.closest('[data-category-row-id]');
+  if (!row || draggedId) return;
+  draggedCategoryId = row.dataset.categoryRowId;
+  row.classList.add('dragging-category');
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', draggedCategoryId);
+});
+
+categoryList.addEventListener('dragover', (event) => {
+  const row = event.target.closest('[data-drop-category-id]');
+  if (!row) return;
+  if (draggedId || draggedCategoryId) event.preventDefault();
+  document.querySelectorAll('.category-drop-target').forEach(element => element.classList.remove('category-drop-target'));
+  if (draggedId || (draggedCategoryId && row.dataset.categoryRowId)) row.classList.add('category-drop-target');
+});
+
+categoryList.addEventListener('drop', async (event) => {
+  const row = event.target.closest('[data-drop-category-id]');
+  if (!row) return;
+  event.preventDefault();
+
+  if (draggedId) {
+    const targetId = row.dataset.dropCategoryId === UNASSIGNED_CATEGORY_ID
+      ? null
+      : row.dataset.dropCategoryId;
+    await moveTodoToCategory(draggedId, targetId);
+    return;
+  }
+
+  if (!draggedCategoryId || !row.dataset.categoryRowId || draggedCategoryId === row.dataset.categoryRowId) return;
+  const fromIndex = categories.findIndex(category => category.id === draggedCategoryId);
+  const toIndex = categories.findIndex(category => category.id === row.dataset.categoryRowId);
+  if (fromIndex === -1 || toIndex === -1) return;
+  const [moved] = categories.splice(fromIndex, 1);
+  categories.splice(toIndex, 0, moved);
+  renderCategoryNavigation();
+  try {
+    await saveCategoryPositions();
+  } catch (error) {
+    await restoreCloudState(error);
+  }
+});
+
+categoryList.addEventListener('dragend', () => {
+  draggedCategoryId = null;
+  document.querySelectorAll('.dragging-category, .category-drop-target').forEach(element => {
+    element.classList.remove('dragging-category', 'category-drop-target');
   });
 });
 
-timeVisibilityToggle.addEventListener('click', () => {
-  setTimeVisibility(!showTaskTimes, { persist: true });
+sidebarToggle.addEventListener('click', () => setSidebarCollapsed(!sidebarCollapsed, { persist: true }));
+mobileSidebarToggle.addEventListener('click', () => {
+  if (appRoot.classList.contains('mobile-sidebar-open')) closeMobileSidebar();
+  else openMobileSidebar();
 });
+sidebarScrim.addEventListener('click', closeMobileSidebar);
+settingsBtn.addEventListener('click', showSettings);
+settingsCloseBtn.addEventListener('click', showTaskWorkspace);
 
-// 清除已完成
-clearBtn.addEventListener('click', clearCompleted);
+showSidebarTimeSetting.addEventListener('change', () => setSidebarTimeVisible(showSidebarTimeSetting.checked, { persist: true }));
+showQuoteSetting.addEventListener('change', () => setSidebarQuoteVisible(showQuoteSetting.checked, { persist: true }));
+showTaskTimesSetting.addEventListener('change', () => setTimeVisibility(showTaskTimesSetting.checked, { persist: true }));
+
+document.getElementById('categoryForm').addEventListener('submit', submitCategoryForm);
+document.getElementById('deleteCategoryBtn').addEventListener('click', deleteCurrentCategory);
+document.getElementById('moveForm').addEventListener('submit', submitMoveForm);
+document.getElementById('bulkOrganizeForm').addEventListener('submit', submitBulkOrganize);
+document.querySelectorAll('[data-dialog-close]').forEach(button => {
+  button.addEventListener('click', () => closeDialog(button.dataset.dialogClose));
+});
+document.getElementById('undoMoveBtn').addEventListener('click', async () => {
+  const undo = lastMoveUndo;
+  document.getElementById('appToast').hidden = true;
+  lastMoveUndo = null;
+  if (undo) await undo();
+});
 
 // ============================================================
 // 侧边栏小部件
@@ -1777,9 +2221,9 @@ function updateDateTime() {
   const weekdays = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
 
   document.getElementById('dateDisplay').textContent =
-    `${now.getFullYear()}年 ${months[now.getMonth()]} ${now.getDate()}日`;
+    `${now.getFullYear()}年${months[now.getMonth()]}${now.getDate()}日`;
   document.getElementById('timeDisplay').textContent =
-    now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
   document.getElementById('weekdayDisplay').textContent = weekdays[now.getDay()];
 }
 
@@ -1802,6 +2246,12 @@ function setDailyQuote() {
   const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
   document.getElementById('quoteText').textContent = quotes[dayOfYear % quotes.length];
 }
+
+document.getElementById('refreshQuoteBtn').addEventListener('click', () => {
+  const quoteElement = document.getElementById('quoteText');
+  const availableQuotes = quotes.filter(quote => quote !== quoteElement.textContent);
+  quoteElement.textContent = availableQuotes[Math.floor(Math.random() * availableQuotes.length)] || quotes[0];
+});
 
 // ============================================================
 // 启动
@@ -1860,7 +2310,7 @@ function scheduleRealtimeRefresh() {
   const expectedUserId = activeUserId;
   realtimeRefreshTimer = setTimeout(async () => {
     try {
-      await loadTodos();
+      await Promise.all([loadCategories(), loadTodos()]);
       if (activeUserId !== expectedUserId) return;
       openDescriptions = loadOpenDescriptions(todos);
       render();
@@ -1874,7 +2324,11 @@ function initAppShell() {
   createParticles();
   setDailyQuote();
   updateDateTime();
-  setInterval(updateDateTime, 1000);
+  const millisecondsUntilNextMinute = 60000 - (Date.now() % 60000);
+  setTimeout(() => {
+    updateDateTime();
+    setInterval(updateDateTime, 60000);
+  }, millisecondsUntilNextMinute);
   initTheme();
 }
 
@@ -1885,20 +2339,28 @@ async function startTodoApp(user) {
   const sessionVersion = ++appSessionVersion;
   activeUserId = user.id;
   setCurrentUser(user);
-  setCurrentFilter(getSavedFilter(user.id));
   setTimeVisibility(getSavedTimeVisibility(user.id));
+  setSidebarCollapsed(getSavedBoolean(SIDEBAR_COLLAPSED_STORAGE_PREFIX, user.id, false));
+  setCompletedExpanded(getSavedBoolean(COMPLETED_EXPANDED_STORAGE_PREFIX, user.id, false));
+  setSidebarTimeVisible(getSavedBoolean(SIDEBAR_TIME_STORAGE_PREFIX, user.id, true));
+  setSidebarQuoteVisible(getSavedBoolean(QUOTE_VISIBLE_STORAGE_PREFIX, user.id, true));
+  activeCategoryId = ALL_CATEGORY_ID;
 
-  list.innerHTML = '<li class="empty-state"><p>正在从云端加载...</p></li>';
+  activeList.innerHTML = '<li class="empty-state"><p>正在从云端加载...</p></li>';
+  completedSection.hidden = true;
   try {
-    await loadTodos();
+    await Promise.all([loadCategories(), loadTodos()]);
     if (sessionVersion !== appSessionVersion || activeUserId !== user.id) return;
     openDescriptions = loadOpenDescriptions(todos);
     render();
-    todoChannel = await subscribeTodoChanges(user.id, handleRealtimeTodoChange);
+    [todoChannel, categoryChannel] = await Promise.all([
+      subscribeTodoChanges(user.id, handleRealtimeTodoChange),
+      subscribeCategoryChanges(user.id, scheduleRealtimeRefresh),
+    ]);
   } catch (error) {
     if (sessionVersion !== appSessionVersion) return;
     showCloudError(error);
-    list.innerHTML = '<li class="empty-state"><p>云端数据加载失败，请检查建表语句与网络连接。</p></li>';
+    activeList.innerHTML = '<li class="empty-state"><p>云端数据加载失败，请先执行最新的数据库建表语句。</p></li>';
   }
 }
 
@@ -1912,12 +2374,21 @@ function stopTodoApp() {
   recentLocalCreates.clear();
   recentLocalDeletes.clear();
   unsubscribeTodoChanges(todoChannel);
+  unsubscribeCategoryChanges(categoryChannel);
   todoChannel = null;
+  categoryChannel = null;
   setCurrentUser(null);
   openDescriptions = new Set();
-  setCurrentFilter(DEFAULT_FILTER);
   setTimeVisibility(false);
+  setSidebarCollapsed(false);
+  setCompletedExpanded(false);
+  setSidebarTimeVisible(true);
+  setSidebarQuoteVisible(true);
+  activeCategoryId = ALL_CATEGORY_ID;
 }
 
-window.addEventListener('beforeunload', () => unsubscribeTodoChanges(todoChannel));
+window.addEventListener('beforeunload', () => {
+  unsubscribeTodoChanges(todoChannel);
+  unsubscribeCategoryChanges(categoryChannel);
+});
 initAppShell();
