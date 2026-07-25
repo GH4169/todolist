@@ -13,12 +13,15 @@ const clearBtn = document.getElementById('clearDone');
 const progressCircle = document.getElementById('progressCircle');
 const percentText = document.getElementById('percentText');
 const filterBtns = document.querySelectorAll('.filter-btn');
+const timeVisibilityToggle = document.getElementById('timeVisibilityToggle');
 
 const circumference = 2 * Math.PI * 60;
 const DEFAULT_FILTER = 'active';
 const VALID_FILTERS = new Set(['all', 'active', 'completed']);
 const FILTER_STORAGE_PREFIX = 'geek-todos-filter:';
+const TIME_VISIBILITY_STORAGE_PREFIX = 'geek-todos-show-times:';
 let currentFilter = DEFAULT_FILTER;
+let showTaskTimes = false;
 
 // 记录展开的描述区域 key: "todoId" 或 "todoId:subId"
 let openDescriptions = new Set();
@@ -92,6 +95,38 @@ function setCurrentFilter(filter, { persist = false } = {}) {
   currentFilter = VALID_FILTERS.has(filter) ? filter : DEFAULT_FILTER;
   syncFilterButtons();
   if (persist) saveFilter(currentFilter);
+}
+
+function getSavedTimeVisibility(userId) {
+  if (!userId) return false;
+  try {
+    return localStorage.getItem(`${TIME_VISIBILITY_STORAGE_PREFIX}${userId}`) === 'true';
+  } catch (error) {
+    console.warn('读取时间显示偏好失败:', error);
+    return false;
+  }
+}
+
+function saveTimeVisibility() {
+  if (!activeUserId) return;
+  try {
+    localStorage.setItem(`${TIME_VISIBILITY_STORAGE_PREFIX}${activeUserId}`, String(showTaskTimes));
+  } catch (error) {
+    console.warn('保存时间显示偏好失败:', error);
+  }
+}
+
+function setTimeVisibility(visible, { persist = false } = {}) {
+  showTaskTimes = Boolean(visible);
+  document.body.classList.toggle('show-task-times', showTaskTimes);
+
+  const actionLabel = showTaskTimes ? '隐藏时间信息' : '显示时间信息';
+  timeVisibilityToggle.classList.toggle('active', showTaskTimes);
+  timeVisibilityToggle.setAttribute('aria-pressed', String(showTaskTimes));
+  timeVisibilityToggle.setAttribute('aria-label', actionLabel);
+  timeVisibilityToggle.title = actionLabel;
+
+  if (persist) saveTimeVisibility();
 }
 
 async function restoreCloudState(error) {
@@ -1168,18 +1203,20 @@ function renderSubtaskHtml(todo, subtask) {
           <svg viewBox="0 0 16 16"><polyline points="2 8 6 12 14 4" /></svg>
         </button>
         <div class="subtask-body">
+          <div class="subtask-actions">
+            <button class="subtask-desc-btn ${subtask.description ? 'has-desc' : ''}" type="button" data-action="toggle-desc" data-todo-id="${todo.id}" data-sub-id="${subtask.id}" title="详情描述" aria-label="详情描述">
+              <svg class="desc-icon" viewBox="0 0 16 16" width="12" height="12" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v7a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 11.5v-7z"/>
+                <path d="M5.5 6.5h5M5.5 9h3.5"/>
+              </svg>
+            </button>
+            <button class="subtask-delete" type="button" data-action="delete-sub" data-todo-id="${todo.id}" data-sub-id="${subtask.id}" title="删除子任务" aria-label="删除子任务">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
           <span class="subtask-text">${escapeHtml(subtask.text)}</span>
           <div class="subtask-time">${renderSubtaskTimeContentHtml(subtask)}</div>
         </div>
-        <button class="subtask-desc-btn ${subtask.description ? 'has-desc' : ''}" type="button" data-action="toggle-desc" data-todo-id="${todo.id}" data-sub-id="${subtask.id}" title="详情描述" aria-label="详情描述">
-          <svg class="desc-icon" viewBox="0 0 16 16" width="12" height="12" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v7a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 11.5v-7z"/>
-            <path d="M5.5 6.5h5M5.5 9h3.5"/>
-          </svg>
-        </button>
-        <button class="subtask-delete" type="button" data-action="delete-sub" data-todo-id="${todo.id}" data-sub-id="${subtask.id}" title="删除子任务" aria-label="删除子任务">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
-        </button>
       </div>
       ${subtask.description || openDescriptions.has(todo.id + ':' + subtask.id) ? `<div class="subtask-desc-section" data-todo-id="${todo.id}" data-sub-id="${subtask.id}" style="display: ${openDescriptions.has(todo.id + ':' + subtask.id) ? 'block' : 'none'};">
         <div class="desc-display">${subtask.description ? escapeHtml(subtask.description) : ''}</div>
@@ -1245,7 +1282,6 @@ function renderTodoHtml(t) {
           ${t.description || openDescriptions.has(t.id) ? `<div class="desc-section" data-id="${t.id}" style="display: ${openDescriptions.has(t.id) ? 'block' : 'none'};">
             <div class="desc-display">${t.description ? escapeHtml(t.description) : ''}</div>
           </div>` : ''}
-          ${subtasksHtml}
         </div>
         ${subtaskCount > 0 ? renderCollapseToggleHtml(t) : ''}
         <div class="todo-actions">
@@ -1265,6 +1301,7 @@ function renderTodoHtml(t) {
           </button>
         </div>
       </div>
+      ${subtasksHtml}
     </li>
   `;
 }
@@ -1723,6 +1760,10 @@ filterBtns.forEach(btn => {
   });
 });
 
+timeVisibilityToggle.addEventListener('click', () => {
+  setTimeVisibility(!showTaskTimes, { persist: true });
+});
+
 // 清除已完成
 clearBtn.addEventListener('click', clearCompleted);
 
@@ -1845,6 +1886,7 @@ async function startTodoApp(user) {
   activeUserId = user.id;
   setCurrentUser(user);
   setCurrentFilter(getSavedFilter(user.id));
+  setTimeVisibility(getSavedTimeVisibility(user.id));
 
   list.innerHTML = '<li class="empty-state"><p>正在从云端加载...</p></li>';
   try {
@@ -1874,6 +1916,7 @@ function stopTodoApp() {
   setCurrentUser(null);
   openDescriptions = new Set();
   setCurrentFilter(DEFAULT_FILTER);
+  setTimeVisibility(false);
 }
 
 window.addEventListener('beforeunload', () => unsubscribeTodoChanges(todoChannel));

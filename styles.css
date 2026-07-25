@@ -371,6 +371,56 @@ body {
   border-radius: 8px;
 }
 
+.list-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 46px;
+  align-items: stretch;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.list-toolbar .filters {
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.time-visibility-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  min-height: 46px;
+  padding: 0;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.time-visibility-toggle:hover {
+  border-color: color-mix(in srgb, var(--neon-blue) 38%, var(--panel-border));
+  background: var(--panel-bg-strong);
+  color: var(--text);
+}
+
+.time-visibility-toggle.active {
+  border-color: color-mix(in srgb, var(--neon-blue) 52%, var(--panel-border));
+  background: var(--panel-bg-strong);
+  color: var(--neon-blue);
+}
+
+.time-visibility-toggle svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .filter-btn {
   flex: 1;
   display: inline-flex;
@@ -425,6 +475,7 @@ body {
 
 .add-btn:focus-visible,
 .filter-btn:focus-visible,
+.time-visibility-toggle:focus-visible,
 .clear-btn:focus-visible,
 .action-btn:focus-visible,
 .user-session button:focus-visible {
@@ -704,6 +755,20 @@ body {
   min-width: 0;
 }
 
+.subtask-body::after {
+  content: '';
+  display: block;
+  clear: both;
+}
+
+.subtask-actions {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  float: right;
+  margin: -2px 0 0 4px;
+}
+
 /* 子任务描述按钮 */
 .subtask-desc-btn {
   width: 22px;
@@ -724,6 +789,11 @@ body {
 }
 
 .subtask-item:hover .subtask-desc-btn {
+  opacity: 1;
+}
+
+.subtask-item:focus-within .subtask-desc-btn,
+.subtask-item:focus-within .subtask-delete {
   opacity: 1;
 }
 
@@ -990,12 +1060,28 @@ body {
   letter-spacing: 0;
 }
 
+body:not(.show-task-times) .task-time-label,
+body:not(.show-task-times) .subtask-time {
+  display: none;
+}
+
+body:not(.show-task-times) .task-time:not(:has(.task-progress-meta)) {
+  display: none;
+}
+
+body:not(.show-task-times) .task-progress-meta::before {
+  display: none;
+}
+
 .subtask-time {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
   gap: 5px;
-  margin-top: 3px;
+  clear: both;
+  min-width: 0;
+  margin-top: 0;
+  padding-top: 2px;
   font-size: 0.62rem;
   color: var(--text-dim);
   opacity: 0.76;
@@ -1024,7 +1110,7 @@ body {
 }
 
 .subtask-delete {
-  width: 24px;
+  width: 22px;
   height: 24px;
   background: none;
   border: none;
@@ -3114,6 +3200,27 @@ textarea { font-family: var(--body-font); }
   background: transparent;
 }
 
+.list-toolbar {
+  grid-template-columns: minmax(0, 1fr) 42px;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.list-toolbar .filters { margin-bottom: 0; }
+
+.time-visibility-toggle {
+  width: 42px;
+  min-height: 42px;
+  border-radius: 4px;
+  background: transparent;
+}
+
+.time-visibility-toggle.active {
+  border-color: var(--panel-border);
+  background: var(--panel-bg-strong);
+  box-shadow: inset 0 -3px 0 var(--neon-blue);
+}
+
 .filter-btn {
   min-height: 41px;
   border: 0;
@@ -3240,7 +3347,7 @@ textarea { font-family: var(--body-font); }
 .subtask-add-row .sub-confirm { border-radius: 3px; }
 
 .subtask-section {
-  padding: 12px 0 0 4px;
+  padding: 12px 0 0 48px;
 }
 
 .subtask-section.collapsed {
@@ -3460,7 +3567,9 @@ body.theme-light .todo-item:hover { background: var(--panel-bg-strong); }
   .subtask-delete,
   .subtask-desc-btn { opacity: 1; }
 
-  .subtask-section { padding-left: 0; }
+  .subtask-section { padding-left: 40px; }
+
+  .subtask-drag-handle { display: none; }
 
   .subtask-time {
     display: flex;
@@ -3528,6 +3637,7 @@ body.theme-light .todo-item:hover { background: var(--panel-bg-strong); }
 }
 
 @media (max-width: 360px) {
+  .subtask-section { padding-left: 32px; }
   .subtask-footer { gap: 8px; }
   .subtask-add-trigger {
     width: 28px;
