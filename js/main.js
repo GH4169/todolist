@@ -436,11 +436,15 @@ function renderCategoryTaskTree(categoryId, categoryTodos, expanded) {
     </ul>`;
 }
 
-function renderCategoryNode({ id, name, iconPath, isSystem = false }) {
+function renderCategoryNode({ id, name, isSystem = false }) {
   const categoryTodos = getCategoryTodos(id);
   const count = categoryTodos.length;
   const isActive = activeCategoryId === id;
   const expanded = count > 0 && expandedCategoryIds.has(id);
+  const toggleLabel = `${expanded ? '折叠' : '展开'}「${name}」中的父任务`;
+  const folderIcon = expanded
+    ? '<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>'
+    : '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>';
   const rowId = isSystem ? '' : ` data-category-row-id="${id}"`;
   const dragAttributes = isSystem ? '' : ` draggable="true" data-category-drag-id="${id}"`;
   const action = isSystem
@@ -454,11 +458,10 @@ function renderCategoryNode({ id, name, iconPath, isSystem = false }) {
   return `
     <li class="category-node ${isSystem ? 'system-category-node' : ''} ${expanded ? 'expanded' : ''}"${rowId} data-drop-category-id="${id}">
       <div class="category-row"${dragAttributes}>
-        <button class="category-expand-toggle" type="button" data-action="toggle-category-tree" data-category-id="${id}" aria-label="${expanded ? '折叠' : '展开'}「${escapeHtml(name)}」中的父任务" aria-expanded="${expanded}" aria-controls="category-tasks-${id}" ${count > 0 ? '' : 'disabled'}>
-          <svg viewBox="0 0 12 12" aria-hidden="true"><polyline points="3,2 8,6 3,10"/></svg>
+        <button class="category-expand-toggle" type="button" data-action="toggle-category-tree" data-category-id="${id}" title="${escapeHtml(toggleLabel)}" aria-label="${escapeHtml(toggleLabel)}" aria-expanded="${expanded}" ${count > 0 ? `aria-controls="category-tasks-${id}"` : 'disabled'}>
+          <svg viewBox="0 0 24 24" aria-hidden="true">${folderIcon}</svg>
         </button>
         <button class="group-nav-item ${isActive ? 'active' : ''}" type="button" data-category-id="${id}" ${isActive ? 'aria-current="page"' : ''}>
-          <svg viewBox="0 0 24 24" aria-hidden="true">${iconPath}</svg>
           <span class="${isSystem ? '' : 'category-name'}" ${isSystem ? '' : 'title="双击重命名"'}>${escapeHtml(name)}</span>
           <b>${count}</b>
         </button>
@@ -474,7 +477,6 @@ function renderCategoryNavigation() {
     ? renderCategoryNode({
       id: UNASSIGNED_CATEGORY_ID,
       name: '未分组',
-      iconPath: '<path d="M4 6h16v12H4z"/><path d="M4 14h5l1.5 2h3L15 14h5"/>',
       isSystem: true,
     })
     : '';
@@ -483,7 +485,6 @@ function renderCategoryNavigation() {
     return renderCategoryNode({
       id: category.id,
       name: category.name,
-      iconPath: '<path d="M3 6h7l2 2h9v10H3z"/>',
     });
   }).join('');
 
