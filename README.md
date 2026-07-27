@@ -27,6 +27,7 @@ The application is built with HTML, responsive CSS, and modular Vanilla JavaScri
 **For users:**
 
 - Create parent tasks and subtasks, edit titles and descriptions inline, mark work as complete, collapse task groups, and clear completed items in bulk.
+- Add parent tasks or subtasks independently to Today, focus on the current day's plan, and carry unfinished items forward.
 - Create, reorder, inline-rename, and delete custom groups, then move parent tasks and their subtasks between groups individually or in bulk.
 - Reorder tasks and subtasks with drag and drop so the most important work stays at the top.
 - Focus on active tasks by default and reveal completed tasks in a remembered collapsible section at the bottom of each group.
@@ -46,4 +47,4 @@ The application is built with HTML, responsive CSS, and modular Vanilla JavaScri
 
 ## Database upgrade
 
-Before deploying this version, run the latest [`supabase-schema.sql`](supabase-schema.sql) in the Supabase SQL Editor. The migration adds the group table and task group field incrementally. Existing tasks remain unchanged and appear under the built-in Unassigned group.
+Before deploying this version, run the latest [`supabase-schema.sql`](supabase-schema.sql) in the Supabase SQL Editor. The migration incrementally adds group storage, task group fields, and the planned date used by Today. Existing tasks remain unchanged and appear under the built-in Unassigned group.

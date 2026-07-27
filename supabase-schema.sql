@@ -11,6 +11,7 @@ create table if not exists public.todos (
   is_collapsed boolean not null default false,
   is_description_open boolean not null default false,
   position integer not null default 0 check (position >= 0),
+  planned_date date,
   created_at timestamptz not null default now(),
   completed_at timestamptz,
   updated_at timestamptz not null default now(),
@@ -33,6 +34,7 @@ create table if not exists public.todo_categories (
 
 -- 现有任务保持 NULL，并由客户端显示为不可删除的“未分组”。
 alter table public.todos add column if not exists category_id uuid;
+alter table public.todos add column if not exists planned_date date;
 
 do $$
 begin
@@ -57,6 +59,10 @@ create index if not exists todos_completed_idx
 create index if not exists todos_user_category_position_idx
   on public.todos(user_id, category_id, position)
   where parent_id is null;
+
+create index if not exists todos_user_planned_date_idx
+  on public.todos(user_id, planned_date)
+  where planned_date is not null;
 
 create index if not exists todo_categories_user_position_idx
   on public.todo_categories(user_id, position);

@@ -49,6 +49,7 @@ function mapRow(row) {
     createdAt: parseTime(row.created_at),
     completedAt: parseTime(row.completed_at),
     description: row.description || '',
+    plannedDate: row.planned_date || null,
   };
 }
 
@@ -62,6 +63,7 @@ function toDatabaseChanges(changes) {
     description: 'description',
     position: 'position',
     categoryId: 'category_id',
+    plannedDate: 'planned_date',
   };
 
   for (const [appKey, column] of Object.entries(mappings)) {
@@ -107,7 +109,7 @@ async function loadTodos() {
 }
 
 /** 新增父任务或子任务，并返回服务器生成 ID 后的完整记录。 */
-async function createTodoRecord({ text, parentId = null, categoryId = null, position = 0 }) {
+async function createTodoRecord({ text, parentId = null, categoryId = null, position = 0, plannedDate = null }) {
   const userId = requireCurrentUserId();
   const { data, error } = await supabaseClient
     .from('todos')
@@ -117,6 +119,7 @@ async function createTodoRecord({ text, parentId = null, categoryId = null, posi
       parent_id: parentId,
       category_id: parentId ? null : categoryId,
       position,
+      planned_date: plannedDate,
     })
     .select()
     .single();

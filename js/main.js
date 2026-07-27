@@ -17,12 +17,15 @@ const clearBtn = document.getElementById('clearDone');
 const progressCircle = document.getElementById('progressCircle');
 const percentText = document.getElementById('percentText');
 const workspaceTitle = document.getElementById('workspaceTitle');
+const workspaceLabel = document.getElementById('workspaceLabel');
 const workspaceSummary = document.getElementById('workspaceSummary');
 const activeTaskCount = document.getElementById('activeTaskCount');
 const completedTaskCount = document.getElementById('completedTaskCount');
 const allTaskCount = document.getElementById('allTaskCount');
+const todayTaskCount = document.getElementById('todayTaskCount');
 const categoryList = document.getElementById('categoryList');
 const allTasksNav = document.getElementById('allTasksNav');
+const todayTasksNav = document.getElementById('todayTasksNav');
 const newTaskCategorySelect = document.getElementById('newTaskCategorySelect');
 const composerCategory = document.getElementById('composerCategory');
 const appRoot = document.getElementById('appView');
@@ -42,6 +45,9 @@ const showQuoteSetting = document.getElementById('showQuoteSetting');
 const showTaskTimesSetting = document.getElementById('showTaskTimesSetting');
 const categoryContextMenu = document.getElementById('categoryContextMenu');
 const deleteCategoryDialog = document.getElementById('deleteCategoryDialog');
+const todayCarryover = document.getElementById('todayCarryover');
+const todayCarryoverList = document.getElementById('todayCarryoverList');
+const carryAllToTodayBtn = document.getElementById('carryAllToTodayBtn');
 
 const circumference = 2 * Math.PI * 60;
 const TIME_VISIBILITY_STORAGE_PREFIX = 'geek-todos-show-times:';
@@ -52,6 +58,7 @@ const QUOTE_VISIBLE_STORAGE_PREFIX = 'geek-todos-quote-visible:';
 const ACTIVE_CATEGORY_STORAGE_PREFIX = 'geek-todos-active-category:';
 const EXPANDED_CATEGORIES_STORAGE_PREFIX = 'geek-todos-expanded-categories:';
 const ALL_CATEGORY_ID = 'all';
+const TODAY_CATEGORY_ID = 'today';
 const UNASSIGNED_CATEGORY_ID = 'unassigned';
 let activeCategoryId = ALL_CATEGORY_ID;
 let expandedCategoryIds = new Set();
@@ -64,6 +71,7 @@ let lastMoveUndo = null;
 let toastTimer = null;
 let contextMenuCategoryId = null;
 let contextMenuReturnFocus = null;
+let currentLocalDateKey = getLocalDateKey();
 
 // 记录展开的描述区域 key: "todoId" 或 "todoId:subId"
 let openDescriptions = new Set();
@@ -166,7 +174,7 @@ function loadExpandedCategories(userId) {
 }
 
 function isValidCategoryId(categoryId) {
-  if (categoryId === ALL_CATEGORY_ID) return true;
+  if (categoryId === ALL_CATEGORY_ID || categoryId === TODAY_CATEGORY_ID) return true;
   if (categoryId === UNASSIGNED_CATEGORY_ID) return todos.some(todo => !todo.categoryId);
   return Boolean(getCategoryById(categoryId));
 }
@@ -354,8 +362,45 @@ function getCategoryName(categoryId) {
   return getCategoryById(categoryId)?.name || '未分组';
 }
 
+function getLocalDateKey(date = new Date()) {
+  const pad = value => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function formatTodayHeading(date = new Date()) {
+  const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+  return `${date.getMonth() + 1}月${date.getDate()}日 · ${weekdays[date.getDay()]}`;
+}
+
+function getTaskEntries() {
+  return todos.flatMap(todo => [
+    { todo, item: todo, isSubtask: false },
+    ...todo.subtasks.map(item => ({ todo, item, isSubtask: true })),
+  ]);
+}
+
+function getTodayEntries() {
+  const today = getLocalDateKey();
+  return getTaskEntries().filter(({ item }) => item.plannedDate === today);
+}
+
+function getCarryoverEntries() {
+  const today = getLocalDateKey();
+  return getTaskEntries().filter(({ item }) => (
+    !item.done && item.plannedDate && item.plannedDate < today
+  ));
+}
+
+function isTodayView() {
+  return activeCategoryId === TODAY_CATEGORY_ID;
+}
+
 function matchesCategory(todo, categoryId = activeCategoryId) {
   if (categoryId === ALL_CATEGORY_ID) return true;
+  if (categoryId === TODAY_CATEGORY_ID) {
+    const today = getLocalDateKey();
+    return todo.plannedDate === today || todo.subtasks.some(item => item.plannedDate === today);
+  }
   if (categoryId === UNASSIGNED_CATEGORY_ID) return !todo.categoryId;
   return todo.categoryId === categoryId;
 }
@@ -387,18 +432,21 @@ function syncCategorySelects() {
 }
 
 function syncComposerCategory() {
-  const isAllTasks = activeCategoryId === ALL_CATEGORY_ID;
-  composerCategory.hidden = !isAllTasks;
-  if (isAllTasks && !newTaskCategorySelect.value) newTaskCategorySelect.value = '';
+  const isCrossCategoryView = activeCategoryId === ALL_CATEGORY_ID || activeCategoryId === TODAY_CATEGORY_ID;
+  composerCategory.hidden = !isCrossCategoryView;
+  if (isCrossCategoryView && !newTaskCategorySelect.value) newTaskCategorySelect.value = '';
 
-  const targetName = activeCategoryId === ALL_CATEGORY_ID
+  const targetName = isCrossCategoryView
     ? getCategoryName(newTaskCategorySelect.value || null)
     : (activeCategoryId === UNASSIGNED_CATEGORY_ID ? '未分组' : getCategoryName(activeCategoryId));
-  input.placeholder = `添加到「${targetName}」`;
+  input.placeholder = isTodayView()
+    ? `添加到「${targetName}」并安排今天`
+    : `添加到「${targetName}」`;
 }
 
 function setActiveCategory(categoryId) {
   const validId = categoryId === ALL_CATEGORY_ID
+    || categoryId === TODAY_CATEGORY_ID
     || categoryId === UNASSIGNED_CATEGORY_ID
     || Boolean(getCategoryById(categoryId));
   activeCategoryId = validId ? categoryId : ALL_CATEGORY_ID;
@@ -462,7 +510,7 @@ function renderCategoryNode({ id, name, isSystem = false }) {
           <svg viewBox="0 0 24 24" aria-hidden="true">${folderIcon}</svg>
         </button>
         <button class="group-nav-item ${isActive ? 'active' : ''}" type="button" data-category-id="${id}" ${isActive ? 'aria-current="page"' : ''}>
-          <span class="${isSystem ? '' : 'category-name'}" ${isSystem ? '' : 'title="双击重命名"'}>${escapeHtml(name)}</span>
+          <span class="${isSystem ? '' : 'category-name'}">${escapeHtml(name)}</span>
           <b>${count}</b>
         </button>
         ${action}
@@ -491,7 +539,10 @@ function renderCategoryNavigation() {
   categoryList.innerHTML = unassignedRow + customRows;
   allTasksNav.classList.toggle('active', activeCategoryId === ALL_CATEGORY_ID);
   allTasksNav.toggleAttribute('aria-current', activeCategoryId === ALL_CATEGORY_ID);
+  todayTasksNav.classList.toggle('active', activeCategoryId === TODAY_CATEGORY_ID);
+  todayTasksNav.toggleAttribute('aria-current', activeCategoryId === TODAY_CATEGORY_ID);
   allTaskCount.textContent = todos.length;
+  todayTaskCount.textContent = getTodayEntries().filter(({ item }) => !item.done).length;
   syncCategorySelects();
 }
 
@@ -898,11 +949,16 @@ function syncDescriptionDom(todoId, subId) {
 async function addTodo() {
   const text = input.value.trim();
   if (!text) return;
-  const categoryId = activeCategoryId === ALL_CATEGORY_ID
+  const categoryId = activeCategoryId === ALL_CATEGORY_ID || activeCategoryId === TODAY_CATEGORY_ID
     ? (newTaskCategorySelect.value || null)
     : (activeCategoryId === UNASSIGNED_CATEGORY_ID ? null : activeCategoryId);
   try {
-    const todo = await createTodoRecord({ text, categoryId, position: 0 });
+    const todo = await createTodoRecord({
+      text,
+      categoryId,
+      position: 0,
+      plannedDate: isTodayView() ? getLocalDateKey() : null,
+    });
     const alreadyPresent = Boolean(findTodoItem(todo.id));
     rememberLocalCreate(todo.id);
     const affectedTodoIds = upsertTodoItem(todo);
@@ -910,6 +966,64 @@ async function addTodo() {
     input.focus();
     if (!alreadyPresent) renderChangedTodos(affectedTodoIds);
     await saveParentTodoPositions(updateTodoWithRealtimeEcho);
+  } catch (error) {
+    await restoreCloudState(error);
+  }
+}
+
+async function toggleTodayPlan(id) {
+  const state = findTodoItem(id);
+  if (!state) return;
+
+  const today = getLocalDateKey();
+  const previousPlannedDate = state.item.plannedDate;
+  const plannedDate = previousPlannedDate === today ? null : today;
+  state.item.plannedDate = plannedDate;
+  render();
+
+  try {
+    await updateTodoWithRealtimeEcho(id, { plannedDate });
+    showToast(plannedDate ? '已加入今日待办' : '已移出今日待办');
+  } catch (error) {
+    if (state.item.plannedDate === plannedDate) state.item.plannedDate = previousPlannedDate;
+    render();
+    showCloudError(error);
+  }
+}
+
+async function moveEntriesToToday(entries) {
+  if (entries.length === 0) return;
+  const today = getLocalDateKey();
+  entries.forEach(({ item }) => { item.plannedDate = today; });
+  render();
+
+  try {
+    await Promise.all(entries.map(({ item }) => (
+      updateTodoWithRealtimeEcho(item.id, { plannedDate: today })
+    )));
+    showToast(entries.length === 1 ? '已移到今日待办' : `已将 ${entries.length} 项移到今天`);
+  } catch (error) {
+    await restoreCloudState(error);
+  }
+}
+
+async function moveCarryoverItemToToday(id) {
+  const state = findTodoItem(id);
+  if (!state || state.item.done || !state.item.plannedDate) return;
+  await moveEntriesToToday([{ todo: state.todo, item: state.item, isSubtask: Boolean(state.item.parentId) }]);
+}
+
+async function clearTodayCompleted() {
+  const completedEntries = getTodayEntries().filter(({ item }) => item.done);
+  if (completedEntries.length === 0) return;
+
+  completedEntries.forEach(({ item }) => { item.plannedDate = null; });
+  render();
+  try {
+    await Promise.all(completedEntries.map(({ item }) => (
+      updateTodoWithRealtimeEcho(item.id, { plannedDate: null })
+    )));
+    showToast(`已收起 ${completedEntries.length} 项今日已完成`);
   } catch (error) {
     await restoreCloudState(error);
   }
@@ -1149,6 +1263,10 @@ async function deleteTodo(id) {
 }
 
 async function clearCompleted() {
+  if (isTodayView()) {
+    await clearTodayCompleted();
+    return;
+  }
   const doneIds = new Set(getScopedTodos().filter(t => t.done).map(t => t.id));
   const deletedIds = todos
     .filter(todo => doneIds.has(todo.id))
@@ -1345,6 +1463,17 @@ function startEditDescription(todoId, subId, { isNewDescription = false } = {}) 
 // ============================================================
 
 function updateProgress() {
+  if (isTodayView()) {
+    const entries = getTodayEntries();
+    const completedCount = entries.filter(({ item }) => item.done).length;
+    const percent = entries.length > 0 ? Math.round((completedCount / entries.length) * 100) : 0;
+    progressCircle.style.strokeDashoffset = entries.length > 0
+      ? circumference - (completedCount / entries.length) * circumference
+      : circumference;
+    percentText.textContent = `${percent}%`;
+    return;
+  }
+
   const scopedTodos = getScopedTodos();
   if (scopedTodos.length === 0) {
     progressCircle.style.strokeDashoffset = circumference;
@@ -1368,6 +1497,13 @@ function updateProgress() {
 }
 
 function updateSideStats() {
+  if (isTodayView()) {
+    const entries = getTodayEntries();
+    const done = entries.filter(({ item }) => item.done).length;
+    workspaceSummary.textContent = `${entries.length - done} 项进行中 · ${done} 项已完成`;
+    return;
+  }
+
   const scopedTodos = getScopedTodos();
   const done = scopedTodos.filter(todo => todo.done).length;
   workspaceSummary.textContent = `${scopedTodos.length - done} 个进行中 · ${done} 个已完成`;
@@ -1403,6 +1539,16 @@ function getVisibleTodos() {
 }
 
 function getEmptyStateHtml(scopedTodos = getScopedTodos()) {
+  if (isTodayView()) {
+    const hasTodayEntries = getTodayEntries().length > 0;
+    return `
+      <li class="empty-state today-empty-state">
+        <div class="empty-icon"><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="8" y="10" width="32" height="30" rx="5"/><path d="M16 7v7M32 7v7M8 19h32"/><path class="empty-accent" d="m17 29 5 5 10-11"/></svg></div>
+        <h3>${hasTodayEntries ? '今日进行中已经清空' : '今天还没有安排'}</h3>
+        <p>${hasTodayEntries ? '已完成事项收在下方' : '先安排一件最重要的事'}</p>
+      </li>`;
+  }
+
   const icon = scopedTodos.length === 0
     ? '<svg viewBox="0 0 48 48" aria-hidden="true"><rect x="9" y="8" width="30" height="32" rx="5"/><path d="M16 18h16M16 25h10M16 32h7"/><path class="empty-accent" d="m29 31 3 3 7-8"/></svg>'
     : '<svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="16"/><path class="empty-accent" d="m16 24 5 5 11-12"/></svg>';
@@ -1442,6 +1588,21 @@ function renderSubtaskTimeContentHtml(subtask) {
     ${completedTime}`;
 }
 
+function renderTodayToggleButton(item, { subtask = false } = {}) {
+  const isToday = item.plannedDate === getLocalDateKey();
+  const label = isToday ? '移出今日待办' : '加入今日待办';
+  const stateIcon = isToday
+    ? '<path class="today-check" d="m8.5 15 2 2 4-4"/>'
+    : '<path class="today-plus" d="M12 13v6M9 16h6"/>';
+  const classes = subtask
+    ? `subtask-today-toggle ${isToday ? 'is-today' : ''}`
+    : `action-btn today-toggle ${isToday ? 'is-today' : ''}`;
+  return `
+    <button class="${classes}" type="button" data-action="toggle-today" data-id="${item.id}" title="${label}" aria-label="${label}" aria-pressed="${isToday}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>${stateIcon}</svg>
+    </button>`;
+}
+
 function renderSubtaskHtml(todo, subtask) {
   return `
     <li class="subtask-item ${subtask.done ? 'done' : ''}" data-todo-id="${todo.id}" data-id="${subtask.id}" draggable="true">
@@ -1452,6 +1613,7 @@ function renderSubtaskHtml(todo, subtask) {
         </button>
         <div class="subtask-body">
           <div class="subtask-actions">
+            ${renderTodayToggleButton(subtask, { subtask: true })}
             <button class="subtask-desc-btn ${subtask.description ? 'has-desc' : ''}" type="button" data-action="toggle-desc" data-todo-id="${todo.id}" data-sub-id="${subtask.id}" title="详情描述" aria-label="详情描述">
               <svg class="desc-icon" viewBox="0 0 16 16" width="12" height="12" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v7a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 11.5v-7z"/>
@@ -1498,15 +1660,15 @@ function renderCollapseToggleHtml(todo) {
   </button>`;
 }
 
-function renderTodoHtml(t) {
+function renderTodoHtml(t, { todayCompact = false } = {}) {
   const subtaskCount = t.subtasks.length;
   const doneCount = t.subtasks.filter(s => s.done).length;
   const subAddRowHtml = renderSubtaskAddRowHtml(t.id);
-  const categoryBadgeHtml = activeCategoryId === ALL_CATEGORY_ID
+  const categoryBadgeHtml = activeCategoryId === ALL_CATEGORY_ID || activeCategoryId === TODAY_CATEGORY_ID
     ? `<span class="task-category-badge"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h7l2 2h9v10H3z"/></svg>${escapeHtml(getCategoryName(t.categoryId))}</span>`
     : '';
 
-  const subtasksHtml = subtaskCount > 0 ? `
+  const subtasksHtml = todayCompact ? '' : (subtaskCount > 0 ? `
     <div class="subtask-section ${t.collapsed ? 'collapsed' : ''}">
       <ul class="subtask-list">
         ${t.subtasks.map(s => renderSubtaskHtml(t, s)).join('')}
@@ -1518,10 +1680,10 @@ function renderTodoHtml(t) {
     <div class="subtask-section">
       ${subAddRowHtml}
     </div>
-  `;
+  `);
 
   return `
-    <li class="todo-item ${t.done ? 'done' : ''}" data-id="${t.id}" draggable="true">
+    <li class="todo-item ${todayCompact ? 'today-parent-card' : ''} ${t.done ? 'done' : ''}" data-id="${t.id}" draggable="${todayCompact ? 'false' : 'true'}">
       <div class="todo-main">
         <span class="drag-handle" title="拖拽排序" aria-hidden="true"><svg viewBox="0 0 12 18"><circle cx="3" cy="4" r="1"/><circle cx="9" cy="4" r="1"/><circle cx="3" cy="9" r="1"/><circle cx="9" cy="9" r="1"/><circle cx="3" cy="14" r="1"/><circle cx="9" cy="14" r="1"/></svg></span>
         <button class="checkbox" type="button" data-action="toggle" aria-label="${t.done ? '标记为未完成' : '标记为已完成'}" aria-pressed="${t.done}">
@@ -1529,16 +1691,17 @@ function renderTodoHtml(t) {
         </button>
         <div class="todo-body">
           <div class="todo-text">${escapeHtml(t.text)}</div>
-          <div class="task-meta">${categoryBadgeHtml}<div class="task-time"><span class="task-time-label">创建于 ${formatTime(t.createdAt)}${t.done && t.completedAt ? ' · 完成于 ' + formatTime(t.completedAt) : ''}</span>${t.collapsed && subtaskCount > 0 ? `<span class="task-progress-meta ${doneCount === subtaskCount ? 'is-complete' : ''}" aria-label="子任务完成情况：${doneCount}/${subtaskCount}">子任务 ${doneCount}/${subtaskCount}</span>` : ''}</div></div>
+          <div class="task-meta">${categoryBadgeHtml}<div class="task-time"><span class="task-time-label">创建于 ${formatTime(t.createdAt)}${t.done && t.completedAt ? ' · 完成于 ' + formatTime(t.completedAt) : ''}</span>${(todayCompact || t.collapsed) && subtaskCount > 0 ? `<span class="task-progress-meta ${doneCount === subtaskCount ? 'is-complete' : ''}" aria-label="子任务完成情况：${doneCount}/${subtaskCount}">子任务 ${doneCount}/${subtaskCount}</span>` : ''}</div></div>
           ${t.description || openDescriptions.has(t.id) ? `<div class="desc-section" data-id="${t.id}" style="display: ${openDescriptions.has(t.id) ? 'block' : 'none'};">
             <div class="desc-display">${t.description ? escapeHtml(t.description) : ''}</div>
           </div>` : ''}
         </div>
-        ${subtaskCount > 0 ? renderCollapseToggleHtml(t) : ''}
+        ${!todayCompact && subtaskCount > 0 ? renderCollapseToggleHtml(t) : ''}
         <div class="todo-actions">
-          <button class="action-btn sub-add-action" type="button" data-action="show-sub-add" data-todo-id="${t.id}" title="添加子任务" aria-label="添加子任务" aria-controls="sub-add-${t.id}" aria-expanded="false">
+          ${renderTodayToggleButton(t)}
+          ${todayCompact ? '' : `<button class="action-btn sub-add-action" type="button" data-action="show-sub-add" data-todo-id="${t.id}" title="添加子任务" aria-label="添加子任务" aria-controls="sub-add-${t.id}" aria-expanded="false">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-          </button>
+          </button>`}
           <button class="action-btn edit-btn" type="button" data-action="start-edit" data-id="${t.id}" title="编辑标题" aria-label="编辑标题">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>
           </button>
@@ -1560,6 +1723,63 @@ function renderTodoHtml(t) {
   `;
 }
 
+function renderTodaySubtaskHtml(todo, subtask) {
+  const descriptionKey = `${todo.id}:${subtask.id}`;
+  return `
+    <li class="todo-item subtask-item today-child-card ${subtask.done ? 'done' : ''}" data-todo-id="${todo.id}" data-id="${subtask.id}" draggable="false">
+      <div class="today-child-main">
+        <button class="subtask-checkbox" type="button" data-action="toggle-sub" data-todo-id="${todo.id}" data-sub-id="${subtask.id}" aria-label="${subtask.done ? '标记为未完成' : '标记为已完成'}" aria-pressed="${subtask.done}">
+          <svg viewBox="0 0 16 16"><polyline points="2 8 6 12 14 4" /></svg>
+        </button>
+        <div class="today-child-body">
+          <span class="today-item-kind">子任务</span>
+          <div class="subtask-text">${escapeHtml(subtask.text)}</div>
+          <div class="today-item-source">
+            <span>${escapeHtml(todo.text)}</span>
+            <span aria-hidden="true">·</span>
+            <span>${escapeHtml(getCategoryName(todo.categoryId))}</span>
+          </div>
+        </div>
+        <div class="today-child-actions">
+          ${renderTodayToggleButton(subtask, { subtask: true })}
+          <button class="subtask-desc-btn ${subtask.description ? 'has-desc' : ''}" type="button" data-action="toggle-desc" data-todo-id="${todo.id}" data-sub-id="${subtask.id}" title="详情描述" aria-label="详情描述">
+            <svg class="desc-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v7a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 11.5v-7z"/><path d="M5.5 6.5h5M5.5 9h3.5"/></svg>
+          </button>
+          <button class="subtask-delete" type="button" data-action="delete-sub" data-todo-id="${todo.id}" data-sub-id="${subtask.id}" title="删除子任务" aria-label="删除子任务">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </div>
+      ${subtask.description || openDescriptions.has(descriptionKey) ? `<div class="subtask-desc-section" data-todo-id="${todo.id}" data-sub-id="${subtask.id}" style="display: ${openDescriptions.has(descriptionKey) ? 'block' : 'none'};">
+        <div class="desc-display">${subtask.description ? escapeHtml(subtask.description) : ''}</div>
+      </div>` : ''}
+    </li>`;
+}
+
+function renderTodayEntryHtml({ todo, item, isSubtask }) {
+  return isSubtask ? renderTodaySubtaskHtml(todo, item) : renderTodoHtml(todo, { todayCompact: true });
+}
+
+function renderCarryover() {
+  const entries = getCarryoverEntries();
+  todayCarryover.hidden = !isTodayView() || entries.length === 0;
+  if (todayCarryover.hidden) {
+    todayCarryoverList.innerHTML = '';
+    return;
+  }
+
+  todayCarryoverList.innerHTML = entries.map(({ todo, item, isSubtask }) => `
+    <li>
+      <div>
+        <strong>${escapeHtml(item.text)}</strong>
+        <span>${isSubtask ? `子任务 · ${escapeHtml(todo.text)}` : escapeHtml(getCategoryName(todo.categoryId))}</span>
+      </div>
+      <button type="button" data-carryover-id="${item.id}" title="移到今天" aria-label="将“${escapeHtml(item.text)}”移到今天">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </button>
+    </li>`).join('');
+}
+
 function createTodoElement(todo) {
   const template = document.createElement('template');
   template.innerHTML = renderTodoHtml(todo).trim();
@@ -1577,6 +1797,23 @@ function getTodoElement(id) {
 }
 
 function updateListSummary() {
+  if (isTodayView()) {
+    const entries = getTodayEntries();
+    const activeCountValue = entries.filter(({ item }) => !item.done).length;
+    const completedCountValue = entries.length - activeCountValue;
+    countText.textContent = entries.length === 0
+      ? '今日暂无安排'
+      : `今日进行中 ${activeCountValue} · 共 ${entries.length} 项`;
+    activeTaskCount.textContent = activeCountValue;
+    completedTaskCount.textContent = completedCountValue;
+    clearBtn.style.display = completedCountValue > 0 ? 'inline-grid' : 'none';
+    clearBtn.title = '收起今日已完成';
+    clearBtn.setAttribute('aria-label', '收起今日已完成');
+    updateProgress();
+    updateSideStats();
+    return;
+  }
+
   const scopedTodos = getScopedTodos();
   const activeCountValue = scopedTodos.filter(todo => !todo.done).length;
   const completedCountValue = scopedTodos.length - activeCountValue;
@@ -1586,6 +1823,8 @@ function updateListSummary() {
   activeTaskCount.textContent = activeCountValue;
   completedTaskCount.textContent = completedCountValue;
   clearBtn.style.display = completedCountValue > 0 ? 'inline-grid' : 'none';
+  clearBtn.title = '清除已完成';
+  clearBtn.setAttribute('aria-label', '清除已完成');
   updateProgress();
   updateSideStats();
 }
@@ -1594,6 +1833,7 @@ function render() {
   const hasUnassignedTodos = todos.some(todo => !todo.categoryId);
   let activeCategoryChanged = false;
   if (activeCategoryId !== ALL_CATEGORY_ID
+    && activeCategoryId !== TODAY_CATEGORY_ID
     && activeCategoryId !== UNASSIGNED_CATEGORY_ID
     && !getCategoryById(activeCategoryId)) {
     activeCategoryId = hasUnassignedTodos ? UNASSIGNED_CATEGORY_ID : ALL_CATEGORY_ID;
@@ -1605,20 +1845,39 @@ function render() {
   }
   if (activeCategoryChanged) saveActiveCategory();
   const scopedTodos = getVisibleTodos();
-  const activeTodos = scopedTodos.filter(todo => !todo.done);
-  const completedTodos = scopedTodos.filter(todo => todo.done);
-
-  activeList.innerHTML = activeTodos.length > 0
-    ? activeTodos.map(renderTodoHtml).join('')
-    : getEmptyStateHtml(scopedTodos);
-  completedList.innerHTML = completedTodos.map(renderTodoHtml).join('');
-  completedSection.hidden = completedTodos.length === 0;
+  if (isTodayView()) {
+    const entries = getTodayEntries();
+    const activeEntries = entries.filter(({ item }) => !item.done);
+    const completedEntries = entries.filter(({ item }) => item.done);
+    activeList.innerHTML = activeEntries.length > 0
+      ? activeEntries.map(renderTodayEntryHtml).join('')
+      : getEmptyStateHtml(scopedTodos);
+    completedList.innerHTML = completedEntries.map(renderTodayEntryHtml).join('');
+    completedSection.hidden = completedEntries.length === 0;
+  } else {
+    const activeTodos = scopedTodos.filter(todo => !todo.done);
+    const completedTodos = scopedTodos.filter(todo => todo.done);
+    activeList.innerHTML = activeTodos.length > 0
+      ? activeTodos.map(renderTodoHtml).join('')
+      : getEmptyStateHtml(scopedTodos);
+    completedList.innerHTML = completedTodos.map(renderTodoHtml).join('');
+    completedSection.hidden = completedTodos.length === 0;
+  }
   completedList.hidden = !completedExpanded;
 
-  if (activeCategoryId === ALL_CATEGORY_ID) workspaceTitle.textContent = '全部任务';
+  taskWorkspace.classList.toggle('today-view', isTodayView());
+  if (activeCategoryId === TODAY_CATEGORY_ID) {
+    workspaceLabel.textContent = `TODOLIST · ${formatTodayHeading()}`;
+    workspaceTitle.textContent = '今日待办';
+  } else if (activeCategoryId === ALL_CATEGORY_ID) {
+    workspaceLabel.textContent = 'TODOLIST · 专注工作台';
+    workspaceTitle.textContent = '全部任务';
+  }
   else if (activeCategoryId === UNASSIGNED_CATEGORY_ID) workspaceTitle.textContent = '未分组';
   else workspaceTitle.textContent = getCategoryName(activeCategoryId);
+  if (!isTodayView() && activeCategoryId !== ALL_CATEGORY_ID) workspaceLabel.textContent = 'TODOLIST · 专注工作台';
 
+  renderCarryover();
   renderCategoryNavigation();
   syncComposerCategory();
   updateListSummary();
@@ -2309,6 +2568,10 @@ list.addEventListener('click', (e) => {
     toggleTodo(todoId);
   } else if (action === 'delete') {
     deleteTodo(actionEl.dataset.id);
+  } else if (action === 'toggle-today') {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleTodayPlan(actionEl.dataset.id);
   } else if (action === 'toggle-sub') {
     e.preventDefault();
     e.stopPropagation();
@@ -2417,6 +2680,12 @@ completedToggle.addEventListener('click', () => setCompletedExpanded(!completedE
 clearBtn.addEventListener('click', clearCompleted);
 
 allTasksNav.addEventListener('click', () => setActiveCategory(ALL_CATEGORY_ID));
+todayTasksNav.addEventListener('click', () => setActiveCategory(TODAY_CATEGORY_ID));
+carryAllToTodayBtn.addEventListener('click', () => moveEntriesToToday(getCarryoverEntries()));
+todayCarryoverList.addEventListener('click', event => {
+  const button = event.target.closest('[data-carryover-id]');
+  if (button) moveCarryoverItemToToday(button.dataset.carryoverId);
+});
 document.getElementById('addCategoryBtn').addEventListener('click', () => openCategoryDialog());
 
 categoryList.addEventListener('click', (event) => {
@@ -2621,6 +2890,13 @@ function updateDateTime() {
   document.getElementById('timeDisplay').textContent =
     now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
   document.getElementById('weekdayDisplay').textContent = weekdays[now.getDay()];
+
+  const nextLocalDateKey = getLocalDateKey(now);
+  if (nextLocalDateKey !== currentLocalDateKey) {
+    currentLocalDateKey = nextLocalDateKey;
+    setDailyQuote();
+    if (activeUserId) render();
+  }
 }
 
 function createParticles() {
