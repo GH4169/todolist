@@ -478,16 +478,14 @@ function setActiveCategory(categoryId) {
   render();
 }
 
-function getCategoryTodos(categoryId) {
-  const categoryTodos = todos.filter(todo => (
-    categoryId === UNASSIGNED_CATEGORY_ID
-      ? !todo.categoryId
-      : todo.categoryId === categoryId
+function getActiveCategoryTodos(categoryId) {
+  return todos.filter(todo => (
+    !todo.done && (
+      categoryId === UNASSIGNED_CATEGORY_ID
+        ? !todo.categoryId
+        : todo.categoryId === categoryId
+    )
   ));
-  return [
-    ...categoryTodos.filter(todo => !todo.done),
-    ...categoryTodos.filter(todo => todo.done),
-  ];
 }
 
 function renderCategoryTaskTree(categoryId, categoryTodos, expanded) {
@@ -505,7 +503,7 @@ function renderCategoryTaskTree(categoryId, categoryTodos, expanded) {
 }
 
 function renderCategoryNode({ id, name, isSystem = false }) {
-  const categoryTodos = getCategoryTodos(id);
+  const categoryTodos = getActiveCategoryTodos(id);
   const count = categoryTodos.length;
   const isActive = activeCategoryId === id;
   const expanded = count > 0 && expandedCategoryIds.has(id);
@@ -2302,7 +2300,7 @@ async function submitDeleteCategory(event) {
 }
 
 function toggleCategoryTree(categoryId) {
-  if (getCategoryTodos(categoryId).length === 0) return;
+  if (getActiveCategoryTodos(categoryId).length === 0) return;
   if (expandedCategoryIds.has(categoryId)) expandedCategoryIds.delete(categoryId);
   else expandedCategoryIds.add(categoryId);
   saveExpandedCategories();
