@@ -57,10 +57,12 @@ const SIDEBAR_TIME_STORAGE_PREFIX = 'geek-todos-sidebar-time:';
 const QUOTE_VISIBLE_STORAGE_PREFIX = 'geek-todos-quote-visible:';
 const ACTIVE_CATEGORY_STORAGE_PREFIX = 'geek-todos-active-category:';
 const EXPANDED_CATEGORIES_STORAGE_PREFIX = 'geek-todos-expanded-categories:';
+const TODAY_COMPOSER_CATEGORY_STORAGE_PREFIX = 'geek-todos-today-composer-category:';
 const ALL_CATEGORY_ID = 'all';
 const TODAY_CATEGORY_ID = 'today';
 const UNASSIGNED_CATEGORY_ID = 'unassigned';
 let activeCategoryId = ALL_CATEGORY_ID;
+let todayComposerCategoryId = null;
 let expandedCategoryIds = new Set();
 let showTaskTimes = false;
 let completedExpanded = false;
@@ -155,6 +157,18 @@ function saveString(prefix, value) {
 
 function saveActiveCategory() {
   saveString(ACTIVE_CATEGORY_STORAGE_PREFIX, activeCategoryId);
+}
+
+function saveTodayComposerCategory() {
+  saveString(TODAY_COMPOSER_CATEGORY_STORAGE_PREFIX, todayComposerCategoryId || '');
+}
+
+function restoreTodayComposerCategory(userId) {
+  const savedCategoryId = getSavedString(TODAY_COMPOSER_CATEGORY_STORAGE_PREFIX, userId, '');
+  todayComposerCategoryId = savedCategoryId && getCategoryById(savedCategoryId)
+    ? savedCategoryId
+    : null;
+  if (savedCategoryId && !todayComposerCategoryId) saveTodayComposerCategory();
 }
 
 function saveExpandedCategories() {
@@ -419,7 +433,13 @@ function categoryOptionHtml(selectedCategoryId = null) {
 }
 
 function syncCategorySelects() {
-  const composerValue = newTaskCategorySelect.value;
+  if (todayComposerCategoryId && !getCategoryById(todayComposerCategoryId)) {
+    todayComposerCategoryId = null;
+    saveTodayComposerCategory();
+  }
+  const composerValue = isTodayView()
+    ? todayComposerCategoryId
+    : newTaskCategorySelect.value;
   newTaskCategorySelect.innerHTML = categoryOptionHtml(composerValue || null);
   if (composerValue && getCategoryById(composerValue)) newTaskCategorySelect.value = composerValue;
 
@@ -2675,7 +2695,13 @@ input.addEventListener('keydown', (e) => {
   }
 });
 
-newTaskCategorySelect.addEventListener('change', syncComposerCategory);
+newTaskCategorySelect.addEventListener('change', () => {
+  if (isTodayView()) {
+    todayComposerCategoryId = newTaskCategorySelect.value || null;
+    saveTodayComposerCategory();
+  }
+  syncComposerCategory();
+});
 completedToggle.addEventListener('click', () => setCompletedExpanded(!completedExpanded, { persist: true }));
 clearBtn.addEventListener('click', clearCompleted);
 
@@ -3024,6 +3050,7 @@ async function startTodoApp(user) {
     await Promise.all([loadCategories(), loadTodos()]);
     if (sessionVersion !== appSessionVersion || activeUserId !== user.id) return;
     restoreCategoryNavigationState(user.id);
+    restoreTodayComposerCategory(user.id);
     openDescriptions = loadOpenDescriptions(todos);
     render();
     [todoChannel, categoryChannel] = await Promise.all([
@@ -3061,6 +3088,7 @@ function stopTodoApp() {
   setSidebarTimeVisible(true);
   setSidebarQuoteVisible(true);
   activeCategoryId = ALL_CATEGORY_ID;
+  todayComposerCategoryId = null;
 }
 
 window.addEventListener('beforeunload', () => {
