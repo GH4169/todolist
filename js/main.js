@@ -53,6 +53,7 @@ const circumference = 2 * Math.PI * 60;
 const TIME_VISIBILITY_STORAGE_PREFIX = 'geek-todos-show-times:';
 const SIDEBAR_COLLAPSED_STORAGE_PREFIX = 'geek-todos-sidebar-collapsed:';
 const COMPLETED_EXPANDED_STORAGE_PREFIX = 'geek-todos-completed-expanded:';
+const COMPLETED_SUBTASKS_EXPANDED_STORAGE_PREFIX = 'geek-todos-completed-subtasks-expanded:';
 const SIDEBAR_TIME_STORAGE_PREFIX = 'geek-todos-sidebar-time:';
 const QUOTE_VISIBLE_STORAGE_PREFIX = 'geek-todos-quote-visible:';
 const ACTIVE_CATEGORY_STORAGE_PREFIX = 'geek-todos-active-category:';
@@ -64,6 +65,7 @@ const UNASSIGNED_CATEGORY_ID = 'unassigned';
 let activeCategoryId = ALL_CATEGORY_ID;
 let todayComposerCategoryId = null;
 let expandedCategoryIds = new Set();
+let expandedCompletedSubtaskTodoIds = new Set();
 let showTaskTimes = false;
 let completedExpanded = false;
 let sidebarCollapsed = false;
@@ -83,6 +85,7 @@ let realtimeRefreshTimer = null;
 const pendingRealtimeEchoes = new Map();
 const pendingDescriptionSaves = new Map();
 const pendingCollapseUpdates = new Map();
+const pendingCompletedSubtaskMoves = new Map();
 const recentLocalCreates = new Map();
 const recentLocalDeletes = new Map();
 let activeUserId = null;
@@ -210,6 +213,33 @@ function restoreCategoryNavigationState(userId) {
   saveExpandedCategories();
 }
 
+function saveExpandedCompletedSubtasks() {
+  saveString(
+    COMPLETED_SUBTASKS_EXPANDED_STORAGE_PREFIX,
+    JSON.stringify([...expandedCompletedSubtaskTodoIds])
+  );
+}
+
+function restoreExpandedCompletedSubtasks(userId) {
+  const saved = getSavedString(COMPLETED_SUBTASKS_EXPANDED_STORAGE_PREFIX, userId);
+  if (saved === null) {
+    expandedCompletedSubtaskTodoIds = new Set();
+    return;
+  }
+
+  try {
+    const ids = JSON.parse(saved);
+    expandedCompletedSubtaskTodoIds = new Set(
+      Array.isArray(ids)
+        ? ids.filter(id => typeof id === 'string' && todos.some(todo => todo.id === id))
+        : []
+    );
+  } catch (error) {
+    console.warn('读取已完成子任务展开状态失败:', error);
+    expandedCompletedSubtaskTodoIds = new Set();
+  }
+}
+
 function getSavedTimeVisibility(userId) {
   if (!userId) return false;
   try {
@@ -253,6 +283,32 @@ function setCompletedExpanded(expanded, { persist = false } = {}) {
   completedSection.classList.toggle('expanded', completedExpanded);
   completedToggle.setAttribute('aria-expanded', String(completedExpanded));
   if (persist) saveBoolean(COMPLETED_EXPANDED_STORAGE_PREFIX, completedExpanded);
+}
+
+function setCompletedSubtasksExpanded(todoId, expanded, { persist = true } = {}) {
+  const todo = todos.find(item => item.id === todoId);
+  if (!todo) return;
+
+  const isExpanded = Boolean(expanded);
+  if (isExpanded) expandedCompletedSubtaskTodoIds.add(todoId);
+  else expandedCompletedSubtaskTodoIds.delete(todoId);
+
+  const todoElement = getTodoElement(todoId);
+  const group = todoElement?.querySelector('.completed-subtasks');
+  const button = group?.querySelector('.completed-subtasks-toggle');
+  const completedSubtaskList = group?.querySelector('.completed-subtask-list');
+  const completedCount = todo.subtasks.filter(subtask => subtask.done).length;
+  const actionLabel = isExpanded ? '折叠' : '展开';
+
+  group?.classList.toggle('expanded', isExpanded);
+  if (completedSubtaskList) completedSubtaskList.hidden = !isExpanded;
+  if (button) {
+    button.setAttribute('aria-expanded', String(isExpanded));
+    button.setAttribute('aria-label', `${actionLabel}已完成子任务，共 ${completedCount} 项`);
+    button.title = `${actionLabel}已完成子任务`;
+  }
+
+  if (persist) saveExpandedCompletedSubtasks();
 }
 
 function setSidebarTimeVisible(visible, { persist = false } = {}) {
@@ -630,6 +686,7 @@ function removeTodoItem(id, parentId) {
   const parentIndex = todos.findIndex(todo => todo.id === id);
   if (parentIndex !== -1) {
     todos.splice(parentIndex, 1);
+    if (expandedCompletedSubtaskTodoIds.delete(id)) saveExpandedCompletedSubtasks();
     for (const key of [...openDescriptions]) {
       if (key === id || key.startsWith(`${id}:`)) openDescriptions.delete(key);
     }
@@ -664,26 +721,62 @@ function syncTodoCompletionDom(todo) {
   return todoElement;
 }
 
+function syncSubtaskRowCompletionDom(todoElement, subtask) {
+  const subtaskElement = [...todoElement.querySelectorAll('.subtask-item')]
+    .find(element => element.dataset.id === subtask.id);
+  if (!subtaskElement) return null;
+
+  subtaskElement.classList.toggle('done', subtask.done);
+  const checkbox = subtaskElement.querySelector('.subtask-checkbox');
+  if (checkbox) {
+    checkbox.setAttribute('aria-pressed', String(subtask.done));
+    checkbox.setAttribute('aria-label', subtask.done ? '标记为未完成' : '标记为已完成');
+  }
+  const timeElement = subtaskElement.querySelector('.subtask-time');
+  if (timeElement) timeElement.innerHTML = renderSubtaskTimeContentHtml(subtask);
+  return subtaskElement;
+}
+
 function syncSubtaskCompletionDom(todo, subtask) {
   const todoElement = syncTodoCompletionDom(todo);
   if (todoElement) {
-    const subtaskElement = [...todoElement.querySelectorAll('.subtask-item')]
-      .find(element => element.dataset.id === subtask.id);
-    if (subtaskElement) {
-      subtaskElement.classList.toggle('done', subtask.done);
-      const checkbox = subtaskElement.querySelector('.subtask-checkbox');
-      if (checkbox) {
-        checkbox.setAttribute('aria-pressed', String(subtask.done));
-        checkbox.setAttribute('aria-label', subtask.done ? '标记为未完成' : '标记为已完成');
-      }
-      const timeElement = subtaskElement.querySelector('.subtask-time');
-      if (timeElement) {
-        timeElement.innerHTML = renderSubtaskTimeContentHtml(subtask);
-      }
-    }
+    syncSubtaskRowCompletionDom(todoElement, subtask);
     syncSubtaskProgressDom(todo, todoElement);
   }
   updateListSummary();
+}
+
+function cancelPendingCompletedSubtaskMove(subtaskId) {
+  const timer = pendingCompletedSubtaskMoves.get(subtaskId);
+  if (!timer) return;
+  clearTimeout(timer);
+  pendingCompletedSubtaskMoves.delete(subtaskId);
+}
+
+function previewCompletedSubtaskMove(todo, subtask) {
+  const todoElement = getTodoElement(todo.id);
+  if (!todoElement) {
+    render();
+    return;
+  }
+
+  const subtaskElement = syncSubtaskRowCompletionDom(todoElement, subtask);
+  subtaskElement?.classList.add('completion-settling');
+  syncSubtaskProgressDom(todo, todoElement);
+  updateListSummary();
+
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    render();
+    return;
+  }
+
+  const timer = setTimeout(() => {
+    pendingCompletedSubtaskMoves.delete(subtask.id);
+    const currentTodo = todos.find(item => item.id === todo.id);
+    const currentSubtask = currentTodo?.subtasks.find(item => item.id === subtask.id);
+    if (currentTodo && currentSubtask?.done) render();
+  }, 480);
+  pendingCompletedSubtaskMoves.set(subtask.id, timer);
 }
 
 function syncSubtaskProgressDom(todo, todoElement = getTodoElement(todo.id)) {
@@ -1082,6 +1175,7 @@ async function toggleSubtask(todoId, subId) {
   if (!t) return;
   const sub = t.subtasks.find(s => s.id === subId);
   if (sub) {
+    cancelPendingCompletedSubtaskMove(subId);
     const previousSubDone = sub.done;
     const previousSubCompletedAt = sub.completedAt;
     const previousSubDescriptionOpen = sub.descriptionOpen;
@@ -1103,7 +1197,12 @@ async function toggleSubtask(todoId, subId) {
     }
     t.done = parentDone;
     t.completedAt = parentCompletedAt;
-    syncSubtaskCompletionDom(t, sub);
+    const shouldPreviewMove = done
+      && !previousParentDone
+      && !parentDone
+      && !isTodayView();
+    if (shouldPreviewMove) previewCompletedSubtaskMove(t, sub);
+    else syncSubtaskCompletionDom(t, sub);
 
     // 双向同步：所有子任务完成 → 父任务完成；有子任务取消 → 父任务取消
     try {
@@ -1122,6 +1221,7 @@ async function toggleSubtask(todoId, subId) {
         && t.done === parentDone
         && t.completedAt === parentCompletedAt
       ) {
+        cancelPendingCompletedSubtaskMove(subId);
         sub.done = previousSubDone;
         sub.completedAt = previousSubCompletedAt;
         t.done = previousParentDone;
@@ -1247,6 +1347,7 @@ async function submitSubtaskAddRow(row) {
 }
 
 async function deleteSubtask(todoId, subId) {
+  cancelPendingCompletedSubtaskMove(subId);
   const item = document.querySelector(`.subtask-item[data-id="${subId}"]`);
   if (!item) return;
   item.classList.add('removing');
@@ -1652,6 +1753,22 @@ function renderSubtaskHtml(todo, subtask) {
     </li>`;
 }
 
+function renderCompletedSubtasksHtml(todo, completedSubtasks) {
+  const expanded = expandedCompletedSubtaskTodoIds.has(todo.id);
+  const actionLabel = expanded ? '折叠' : '展开';
+  return `
+    <div class="completed-subtasks ${expanded ? 'expanded' : ''}">
+      <button class="completed-subtasks-toggle" type="button" data-action="toggle-completed-subtasks" data-todo-id="${todo.id}" title="${actionLabel}已完成子任务" aria-label="${actionLabel}已完成子任务，共 ${completedSubtasks.length} 项" aria-expanded="${expanded}" aria-controls="completed-subtasks-${todo.id}">
+        <svg viewBox="0 0 12 12" aria-hidden="true"><polyline points="2,3 6,8 10,3" /></svg>
+        <span>已完成</span>
+        <b>${completedSubtasks.length}</b>
+      </button>
+      <ul class="subtask-list completed-subtask-list" id="completed-subtasks-${todo.id}" ${expanded ? '' : 'hidden'}>
+        ${completedSubtasks.map(subtask => renderSubtaskHtml(todo, subtask)).join('')}
+      </ul>
+    </div>`;
+}
+
 function renderSubtaskFooterHtml(todo) {
   const doneCount = todo.subtasks.filter(subtask => subtask.done).length;
   const progress = todo.subtasks.length > 0
@@ -1680,17 +1797,28 @@ function renderCollapseToggleHtml(todo) {
 
 function renderTodoHtml(t, { todayCompact = false } = {}) {
   const subtaskCount = t.subtasks.length;
-  const doneCount = t.subtasks.filter(s => s.done).length;
+  const activeSubtasks = t.subtasks.filter(subtask => !subtask.done);
+  const completedSubtasks = t.subtasks.filter(subtask => subtask.done);
+  const doneCount = completedSubtasks.length;
   const subAddRowHtml = renderSubtaskAddRowHtml(t.id);
   const categoryBadgeHtml = activeCategoryId === ALL_CATEGORY_ID || activeCategoryId === TODAY_CATEGORY_ID
     ? `<span class="task-category-badge"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h7l2 2h9v10H3z"/></svg>${escapeHtml(getCategoryName(t.categoryId))}</span>`
     : '';
 
+  const groupedSubtasksHtml = !t.done && completedSubtasks.length > 0
+    ? `
+      <ul class="subtask-list subtask-active-list">
+        ${activeSubtasks.map(subtask => renderSubtaskHtml(t, subtask)).join('')}
+      </ul>
+      ${renderCompletedSubtasksHtml(t, completedSubtasks)}`
+    : `
+      <ul class="subtask-list">
+        ${t.subtasks.map(subtask => renderSubtaskHtml(t, subtask)).join('')}
+      </ul>`;
+
   const subtasksHtml = todayCompact ? '' : (subtaskCount > 0 ? `
     <div class="subtask-section ${t.collapsed ? 'collapsed' : ''}">
-      <ul class="subtask-list">
-        ${t.subtasks.map(s => renderSubtaskHtml(t, s)).join('')}
-      </ul>
+      ${groupedSubtasksHtml}
       ${renderSubtaskFooterHtml(t)}
       ${subAddRowHtml}
     </div>
@@ -2441,7 +2569,11 @@ list.addEventListener('dragstart', (e) => {
       e.preventDefault();
       return;
     }
-    draggedSub = { todoId: subItem.dataset.todoId, subId: subItem.dataset.id };
+    draggedSub = {
+      todoId: subItem.dataset.todoId,
+      subId: subItem.dataset.id,
+      done: subItem.classList.contains('done'),
+    };
     subItem.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', subItem.dataset.id);
@@ -2485,7 +2617,12 @@ list.addEventListener('dragover', (e) => {
 
   if (draggedSub) {
     const subTarget = e.target.closest('.subtask-item');
-    if (subTarget && subTarget.dataset.id !== draggedSub.subId) {
+    if (
+      subTarget
+      && subTarget.dataset.id !== draggedSub.subId
+      && subTarget.dataset.todoId === draggedSub.todoId
+      && subTarget.classList.contains('done') === draggedSub.done
+    ) {
       subTarget.classList.add('subtask-drag-over');
     }
   } else if (draggedId) {
@@ -2519,6 +2656,10 @@ list.addEventListener('drop', async (e) => {
   if (draggedSub) {
     const subTarget = e.target.closest('.subtask-item');
     if (!subTarget) return;
+    if (
+      subTarget.dataset.todoId !== draggedSub.todoId
+      || subTarget.classList.contains('done') !== draggedSub.done
+    ) return;
     const targetSubId = subTarget.dataset.id;
     if (targetSubId === draggedSub.subId) return;
 
@@ -2595,6 +2736,14 @@ list.addEventListener('click', (e) => {
     e.stopPropagation();
     const subId = actionEl.dataset.subId;
     toggleSubtask(actionEl.dataset.todoId, subId);
+  } else if (action === 'toggle-completed-subtasks') {
+    e.preventDefault();
+    e.stopPropagation();
+    const targetTodoId = actionEl.dataset.todoId;
+    setCompletedSubtasksExpanded(
+      targetTodoId,
+      !expandedCompletedSubtaskTodoIds.has(targetTodoId)
+    );
   } else if (action === 'delete-sub') {
     e.stopPropagation();
     const subId = actionEl.dataset.subId;
@@ -3049,6 +3198,7 @@ async function startTodoApp(user) {
     if (sessionVersion !== appSessionVersion || activeUserId !== user.id) return;
     restoreCategoryNavigationState(user.id);
     restoreTodayComposerCategory(user.id);
+    restoreExpandedCompletedSubtasks(user.id);
     openDescriptions = loadOpenDescriptions(todos);
     render();
     [todoChannel, categoryChannel] = await Promise.all([
@@ -3071,6 +3221,8 @@ function stopTodoApp() {
   pendingRealtimeEchoes.clear();
   pendingDescriptionSaves.clear();
   pendingCollapseUpdates.clear();
+  pendingCompletedSubtaskMoves.forEach(timer => clearTimeout(timer));
+  pendingCompletedSubtaskMoves.clear();
   recentLocalCreates.clear();
   recentLocalDeletes.clear();
   unsubscribeTodoChanges(todoChannel);
@@ -3080,6 +3232,7 @@ function stopTodoApp() {
   setCurrentUser(null);
   openDescriptions = new Set();
   expandedCategoryIds = new Set();
+  expandedCompletedSubtaskTodoIds = new Set();
   setTimeVisibility(false);
   setSidebarCollapsed(false);
   setCompletedExpanded(false);

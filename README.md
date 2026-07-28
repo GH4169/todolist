@@ -27,6 +27,7 @@ The application is built with HTML, responsive CSS, and modular Vanilla JavaScri
 **For users:**
 
 - Create parent tasks and subtasks, edit titles and descriptions inline, mark work as complete, collapse task groups, and clear completed items in bulk.
+- Keep active subtasks in focus while completed subtasks sit in a remembered collapsible section inside each active parent task.
 - Add parent tasks or subtasks independently to Today, focus on the current day's plan, and carry unfinished items forward.
 - Create, reorder, inline-rename, and delete custom groups, then move parent tasks and their subtasks between groups individually or in bulk.
 - Reorder tasks and subtasks with drag and drop so the most important work stays at the top.

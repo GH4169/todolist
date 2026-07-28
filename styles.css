@@ -3359,6 +3359,73 @@ textarea { font-family: var(--body-font); }
 .subtask-text { font-size: 0.82rem; }
 .subtask-time { font-family: var(--utility-font); font-size: 0.62rem; }
 
+.completed-subtasks {
+  border-top: 1px solid color-mix(in srgb, var(--panel-border) 78%, transparent);
+}
+
+.completed-subtasks-toggle {
+  width: 100%;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--side-muted);
+  cursor: pointer;
+  font: 650 0.62rem/1 var(--utility-font);
+  text-align: left;
+  transition: color 160ms ease, background-color 160ms ease;
+}
+
+.completed-subtasks-toggle:hover {
+  background: color-mix(in srgb, var(--panel-bg-strong) 34%, transparent);
+  color: var(--text-dim);
+}
+
+.completed-subtasks-toggle:focus-visible {
+  outline: 2px solid var(--neon-blue);
+  outline-offset: 2px;
+}
+
+.completed-subtasks-toggle svg {
+  width: 11px;
+  height: 11px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  transition: transform 160ms ease;
+  transform: rotate(-90deg);
+}
+
+.completed-subtasks.expanded .completed-subtasks-toggle svg { transform: rotate(0); }
+
+.completed-subtasks-toggle b {
+  margin-left: auto;
+  color: color-mix(in srgb, var(--neon-green) 72%, var(--side-muted));
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.completed-subtask-list {
+  border-top: 1px dashed color-mix(in srgb, var(--panel-border) 70%, transparent);
+  animation: completedSubtasksReveal 160ms ease-out;
+}
+
+.completed-subtask-list[hidden] { display: none; }
+
+.subtask-item.done.completion-settling {
+  opacity: 0.76;
+  background: color-mix(in srgb, var(--neon-green) 8%, transparent);
+}
+
+@keyframes completedSubtasksReveal {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .footer {
   margin-top: 16px;
   padding: 9px 2px 0;
@@ -3568,6 +3635,8 @@ body.theme-light .todo-item:hover { background: var(--panel-bg-strong); }
   .subtask-desc-btn { opacity: 1; }
 
   .subtask-section { padding-left: 40px; }
+
+  .completed-subtasks-toggle { min-height: 40px; }
 
   .subtask-drag-handle { display: none; }
 
@@ -4834,7 +4903,9 @@ body.theme-light .todo-item:hover { background: var(--panel-bg-strong); }
 
 @media (prefers-reduced-motion: reduce) {
   .sidebar-toggle,
-  .category-expand-toggle svg { transition: none; }
+  .category-expand-toggle svg,
+  .completed-subtasks-toggle svg { transition: none; }
+  .completed-subtask-list { animation: none; }
   .todo-item.sidebar-target-highlight { animation: none; box-shadow: 0 0 0 2px var(--neon-blue); }
 }
 
