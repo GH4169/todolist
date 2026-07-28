@@ -578,7 +578,7 @@ function renderCategoryNode({ id, name, isSystem = false }) {
       </button>`;
 
   return `
-    <li class="category-node ${isSystem ? 'system-category-node' : ''} ${expanded ? 'expanded' : ''}"${rowId} data-drop-category-id="${id}">
+    <li class="category-node ${isSystem ? 'system-category-node' : ''} ${isActive ? 'active' : ''} ${expanded ? 'expanded' : ''}"${rowId} data-drop-category-id="${id}">
       <div class="category-row"${dragAttributes}>
         <button class="category-expand-toggle" type="button" data-action="toggle-category-tree" data-category-id="${id}" title="${escapeHtml(toggleLabel)}" aria-label="${escapeHtml(toggleLabel)}" aria-expanded="${expanded}" ${count > 0 ? `aria-controls="category-tasks-${id}"` : 'disabled'}>
           <svg viewBox="0 0 24 24" aria-hidden="true">${folderIcon}</svg>
