@@ -21,10 +21,8 @@ const workspaceLabel = document.getElementById('workspaceLabel');
 const workspaceSummary = document.getElementById('workspaceSummary');
 const activeTaskCount = document.getElementById('activeTaskCount');
 const completedTaskCount = document.getElementById('completedTaskCount');
-const allTaskCount = document.getElementById('allTaskCount');
 const todayTaskCount = document.getElementById('todayTaskCount');
 const categoryList = document.getElementById('categoryList');
-const allTasksNav = document.getElementById('allTasksNav');
 const todayTasksNav = document.getElementById('todayTasksNav');
 const newTaskCategorySelect = document.getElementById('newTaskCategorySelect');
 const composerCategory = document.getElementById('composerCategory');
@@ -59,10 +57,9 @@ const QUOTE_VISIBLE_STORAGE_PREFIX = 'geek-todos-quote-visible:';
 const ACTIVE_CATEGORY_STORAGE_PREFIX = 'geek-todos-active-category:';
 const EXPANDED_CATEGORIES_STORAGE_PREFIX = 'geek-todos-expanded-categories:';
 const TODAY_COMPOSER_CATEGORY_STORAGE_PREFIX = 'geek-todos-today-composer-category:';
-const ALL_CATEGORY_ID = 'all';
 const TODAY_CATEGORY_ID = 'today';
 const UNASSIGNED_CATEGORY_ID = 'unassigned';
-let activeCategoryId = ALL_CATEGORY_ID;
+let activeCategoryId = TODAY_CATEGORY_ID;
 let todayComposerCategoryId = null;
 let expandedCategoryIds = new Set();
 let expandedCompletedSubtaskTodoIds = new Set();
@@ -191,18 +188,18 @@ function loadExpandedCategories(userId) {
 }
 
 function isValidCategoryId(categoryId) {
-  if (categoryId === ALL_CATEGORY_ID || categoryId === TODAY_CATEGORY_ID) return true;
+  if (categoryId === TODAY_CATEGORY_ID) return true;
   if (categoryId === UNASSIGNED_CATEGORY_ID) return todos.some(todo => !todo.categoryId);
   return Boolean(getCategoryById(categoryId));
 }
 
 function restoreCategoryNavigationState(userId) {
-  const savedCategoryId = getSavedString(ACTIVE_CATEGORY_STORAGE_PREFIX, userId, ALL_CATEGORY_ID);
-  activeCategoryId = isValidCategoryId(savedCategoryId) ? savedCategoryId : ALL_CATEGORY_ID;
+  const savedCategoryId = getSavedString(ACTIVE_CATEGORY_STORAGE_PREFIX, userId, TODAY_CATEGORY_ID);
+  activeCategoryId = isValidCategoryId(savedCategoryId) ? savedCategoryId : TODAY_CATEGORY_ID;
 
   const savedExpandedIds = loadExpandedCategories(userId);
   expandedCategoryIds = savedExpandedIds ?? new Set(
-    activeCategoryId === ALL_CATEGORY_ID ? [] : [activeCategoryId]
+    activeCategoryId === TODAY_CATEGORY_ID ? [] : [activeCategoryId]
   );
   expandedCategoryIds = new Set([...expandedCategoryIds].filter(id => (
     id === UNASSIGNED_CATEGORY_ID
@@ -466,7 +463,6 @@ function isTodayView() {
 }
 
 function matchesCategory(todo, categoryId = activeCategoryId) {
-  if (categoryId === ALL_CATEGORY_ID) return true;
   if (categoryId === TODAY_CATEGORY_ID) {
     const today = getLocalDateKey();
     return todo.plannedDate === today || todo.subtasks.some(item => item.plannedDate === today);
@@ -508,7 +504,7 @@ function syncCategorySelects() {
 }
 
 function syncComposerCategory() {
-  const isCrossCategoryView = activeCategoryId === ALL_CATEGORY_ID || activeCategoryId === TODAY_CATEGORY_ID;
+  const isCrossCategoryView = isTodayView();
   composerCategory.hidden = !isCrossCategoryView;
   if (isCrossCategoryView && !newTaskCategorySelect.value) newTaskCategorySelect.value = '';
 
@@ -521,11 +517,10 @@ function syncComposerCategory() {
 }
 
 function setActiveCategory(categoryId) {
-  const validId = categoryId === ALL_CATEGORY_ID
-    || categoryId === TODAY_CATEGORY_ID
+  const validId = categoryId === TODAY_CATEGORY_ID
     || categoryId === UNASSIGNED_CATEGORY_ID
     || Boolean(getCategoryById(categoryId));
-  activeCategoryId = validId ? categoryId : ALL_CATEGORY_ID;
+  activeCategoryId = validId ? categoryId : TODAY_CATEGORY_ID;
   saveActiveCategory();
   taskWorkspace.hidden = false;
   settingsView.hidden = true;
@@ -611,11 +606,8 @@ function renderCategoryNavigation() {
   }).join('');
 
   categoryList.innerHTML = unassignedRow + customRows;
-  allTasksNav.classList.toggle('active', activeCategoryId === ALL_CATEGORY_ID);
-  allTasksNav.toggleAttribute('aria-current', activeCategoryId === ALL_CATEGORY_ID);
   todayTasksNav.classList.toggle('active', activeCategoryId === TODAY_CATEGORY_ID);
   todayTasksNav.toggleAttribute('aria-current', activeCategoryId === TODAY_CATEGORY_ID);
-  allTaskCount.textContent = todos.length;
   todayTaskCount.textContent = getTodayEntries().filter(({ item }) => !item.done).length;
   syncCategorySelects();
 }
@@ -1060,7 +1052,7 @@ function syncDescriptionDom(todoId, subId) {
 async function addTodo() {
   const text = input.value.trim();
   if (!text) return;
-  const categoryId = activeCategoryId === ALL_CATEGORY_ID || activeCategoryId === TODAY_CATEGORY_ID
+  const categoryId = activeCategoryId === TODAY_CATEGORY_ID
     ? (newTaskCategorySelect.value || null)
     : (activeCategoryId === UNASSIGNED_CATEGORY_ID ? null : activeCategoryId);
   try {
@@ -1801,7 +1793,7 @@ function renderTodoHtml(t, { todayCompact = false } = {}) {
   const completedSubtasks = t.subtasks.filter(subtask => subtask.done);
   const doneCount = completedSubtasks.length;
   const subAddRowHtml = renderSubtaskAddRowHtml(t.id);
-  const categoryBadgeHtml = activeCategoryId === ALL_CATEGORY_ID || activeCategoryId === TODAY_CATEGORY_ID
+  const categoryBadgeHtml = activeCategoryId === TODAY_CATEGORY_ID
     ? `<span class="task-category-badge"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h7l2 2h9v10H3z"/></svg>${escapeHtml(getCategoryName(t.categoryId))}</span>`
     : '';
 
@@ -1978,15 +1970,14 @@ function updateListSummary() {
 function render() {
   const hasUnassignedTodos = todos.some(todo => !todo.categoryId);
   let activeCategoryChanged = false;
-  if (activeCategoryId !== ALL_CATEGORY_ID
-    && activeCategoryId !== TODAY_CATEGORY_ID
+  if (activeCategoryId !== TODAY_CATEGORY_ID
     && activeCategoryId !== UNASSIGNED_CATEGORY_ID
     && !getCategoryById(activeCategoryId)) {
-    activeCategoryId = hasUnassignedTodos ? UNASSIGNED_CATEGORY_ID : ALL_CATEGORY_ID;
+    activeCategoryId = hasUnassignedTodos ? UNASSIGNED_CATEGORY_ID : TODAY_CATEGORY_ID;
     activeCategoryChanged = true;
   }
   if (activeCategoryId === UNASSIGNED_CATEGORY_ID && !hasUnassignedTodos) {
-    activeCategoryId = ALL_CATEGORY_ID;
+    activeCategoryId = TODAY_CATEGORY_ID;
     activeCategoryChanged = true;
   }
   if (activeCategoryChanged) saveActiveCategory();
@@ -2015,13 +2006,9 @@ function render() {
   if (activeCategoryId === TODAY_CATEGORY_ID) {
     workspaceLabel.textContent = `TODOLIST · ${formatTodayHeading()}`;
     workspaceTitle.textContent = '今日待办';
-  } else if (activeCategoryId === ALL_CATEGORY_ID) {
-    workspaceLabel.textContent = 'TODOLIST · 专注工作台';
-    workspaceTitle.textContent = '全部任务';
-  }
-  else if (activeCategoryId === UNASSIGNED_CATEGORY_ID) workspaceTitle.textContent = '未分组';
+  } else if (activeCategoryId === UNASSIGNED_CATEGORY_ID) workspaceTitle.textContent = '未分组';
   else workspaceTitle.textContent = getCategoryName(activeCategoryId);
-  if (!isTodayView() && activeCategoryId !== ALL_CATEGORY_ID) workspaceLabel.textContent = 'TODOLIST · 专注工作台';
+  if (!isTodayView()) workspaceLabel.textContent = 'TODOLIST · 专注工作台';
 
   renderCarryover();
   renderCategoryNavigation();
@@ -2399,7 +2386,7 @@ async function deleteCategory(id) {
       if (todo.categoryId === id) todo.categoryId = null;
     });
     if (activeCategoryId === id) {
-      activeCategoryId = affectedCount > 0 ? UNASSIGNED_CATEGORY_ID : ALL_CATEGORY_ID;
+      activeCategoryId = affectedCount > 0 ? UNASSIGNED_CATEGORY_ID : TODAY_CATEGORY_ID;
       saveActiveCategory();
     }
     render();
@@ -2852,7 +2839,6 @@ newTaskCategorySelect.addEventListener('change', () => {
 completedToggle.addEventListener('click', () => setCompletedExpanded(!completedExpanded, { persist: true }));
 clearBtn.addEventListener('click', clearCompleted);
 
-allTasksNav.addEventListener('click', () => setActiveCategory(ALL_CATEGORY_ID));
 todayTasksNav.addEventListener('click', () => setActiveCategory(TODAY_CATEGORY_ID));
 carryAllToTodayBtn.addEventListener('click', () => moveEntriesToToday(getCarryoverEntries()));
 todayCarryoverList.addEventListener('click', event => {
@@ -3189,7 +3175,7 @@ async function startTodoApp(user) {
   setCompletedExpanded(getSavedBoolean(COMPLETED_EXPANDED_STORAGE_PREFIX, user.id, false));
   setSidebarTimeVisible(getSavedBoolean(SIDEBAR_TIME_STORAGE_PREFIX, user.id, true));
   setSidebarQuoteVisible(getSavedBoolean(QUOTE_VISIBLE_STORAGE_PREFIX, user.id, true));
-  activeCategoryId = ALL_CATEGORY_ID;
+  activeCategoryId = TODAY_CATEGORY_ID;
 
   activeList.innerHTML = '<li class="empty-state"><p>正在从云端加载...</p></li>';
   completedSection.hidden = true;
@@ -3238,7 +3224,7 @@ function stopTodoApp() {
   setCompletedExpanded(false);
   setSidebarTimeVisible(true);
   setSidebarQuoteVisible(true);
-  activeCategoryId = ALL_CATEGORY_ID;
+  activeCategoryId = TODAY_CATEGORY_ID;
   todayComposerCategoryId = null;
 }
 

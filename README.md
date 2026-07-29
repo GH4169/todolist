@@ -31,6 +31,7 @@ The application is built with HTML, responsive CSS, and modular Vanilla JavaScri
 - Add parent tasks or subtasks independently to Today, focus on the current day's plan, and carry unfinished items forward.
 - Create, reorder, inline-rename, and delete custom groups, then move parent tasks and their subtasks between groups individually or in bulk.
 - Reorder tasks and subtasks with drag and drop so the most important work stays at the top.
+- Start in Today on first use, then return to the most recently opened Today view or task group.
 - Focus on active tasks by default and reveal completed tasks in a remembered collapsible section at the bottom of each group.
 - Collapse the desktop sidebar to a single quiet reveal button, or use the group drawer on mobile screens.
 - Review completion rates, task statistics, subtask progress, and timestamps at a glance.
