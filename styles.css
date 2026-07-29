@@ -3880,6 +3880,7 @@ body.theme-light .todo-item:hover { background: var(--panel-bg-strong); }
 }
 
 .group-nav { display: grid; gap: 15px; }
+.date-nav-list { display: grid; gap: 3px; }
 
 .group-nav-item {
   width: 100%;
@@ -4491,6 +4492,75 @@ body.theme-light .todo-item:hover { background: var(--panel-bg-strong); }
   color: var(--neon-pink);
 }
 
+.date-plan-menu {
+  position: fixed;
+  z-index: 125;
+  width: min(220px, calc(100vw - 16px));
+  display: grid;
+  gap: 2px;
+  padding: 5px;
+  border: 1px solid var(--side-border);
+  border-radius: 4px;
+  background: var(--side-surface);
+  color: var(--text);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(18px);
+}
+
+.date-plan-menu button {
+  width: 100%;
+  min-height: 45px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 15px;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-dim);
+  text-align: left;
+}
+
+.date-plan-menu button:hover,
+.date-plan-menu button:focus-visible {
+  border-color: color-mix(in srgb, var(--side-border) 72%, transparent);
+  background: var(--side-surface-subtle);
+  color: var(--text);
+  outline: 0;
+}
+
+.date-plan-menu button:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.date-plan-menu button:disabled:hover { border-color: transparent; background: transparent; color: var(--text-dim); }
+
+.date-plan-menu svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.date-plan-copy { min-width: 0; }
+.date-plan-copy b,
+.date-plan-copy small { display: block; }
+.date-plan-copy b { color: currentColor; font: 600 0.7rem/1.2 var(--body-font); }
+.date-plan-copy small { margin-top: 3px; color: var(--side-muted); font: 500 0.56rem/1.2 var(--utility-font); }
+.date-plan-selected { opacity: 0; }
+.date-plan-menu [aria-checked="true"] .date-plan-selected { opacity: 1; }
+.date-plan-menu [data-date-plan-action="today"][aria-checked="true"] { color: var(--neon-orange); }
+.date-plan-menu [data-date-plan-action="tomorrow"][aria-checked="true"] { color: var(--neon-blue); }
+.date-plan-separator { height: 1px; margin: 3px 5px; background: var(--side-divider); }
+.date-plan-menu .date-plan-clear { grid-template-columns: 18px minmax(0, 1fr); }
+.date-plan-menu .date-plan-clear:not(:disabled):hover,
+.date-plan-menu .date-plan-clear:not(:disabled):focus-visible { color: var(--neon-pink); }
+
 .todo-item.sidebar-target-highlight { animation: sidebar-target-highlight 1100ms ease-out; }
 
 @keyframes sidebar-target-highlight {
@@ -4925,7 +4995,7 @@ body.theme-light .todo-item:hover { background: var(--panel-bg-strong); }
   .todo-item.sidebar-target-highlight { animation: none; box-shadow: 0 0 0 2px var(--neon-blue); }
 }
 
-/* ==================== Today plan ==================== */
+/* ==================== Planned dates ==================== */
 .today-nav-item {
   position: relative;
 }
@@ -4943,28 +5013,59 @@ body.theme-light .todo-item:hover { background: var(--panel-bg-strong); }
 .today-nav-item.active svg,
 .today-nav-item.active b { color: var(--neon-orange); }
 
-.today-toggle.is-today,
-.subtask-today-toggle.is-today {
+.tomorrow-nav-item svg {
+  color: color-mix(in srgb, var(--neon-blue) 76%, var(--side-muted));
+}
+
+.tomorrow-nav-item.active {
+  border-color: color-mix(in srgb, var(--neon-blue) 30%, var(--side-border));
+  background: color-mix(in srgb, var(--neon-blue) 9%, var(--side-surface-subtle));
+  box-shadow: inset 3px 0 0 var(--neon-blue);
+}
+
+.tomorrow-nav-item.active svg,
+.tomorrow-nav-item.active b { color: var(--neon-blue); }
+
+.schedule-toggle.is-today,
+.subtask-schedule-toggle.is-today {
   opacity: 1;
   background: color-mix(in srgb, var(--neon-orange) 12%, transparent);
   color: var(--neon-orange);
 }
 
-.today-toggle:hover,
-.today-toggle:focus-visible,
-.subtask-today-toggle:hover,
-.subtask-today-toggle:focus-visible {
+.schedule-toggle.is-tomorrow,
+.subtask-schedule-toggle.is-tomorrow {
+  opacity: 1;
+  background: color-mix(in srgb, var(--neon-blue) 12%, transparent);
+  color: var(--neon-blue);
+}
+
+.schedule-toggle.is-scheduled,
+.subtask-schedule-toggle.is-scheduled { opacity: 1; }
+
+.schedule-toggle:hover,
+.schedule-toggle:focus-visible,
+.subtask-schedule-toggle:hover,
+.subtask-schedule-toggle:focus-visible {
+  background: color-mix(in srgb, var(--neon-blue) 13%, transparent);
+  color: var(--neon-blue);
+}
+
+.schedule-toggle.is-today:hover,
+.schedule-toggle.is-today:focus-visible,
+.subtask-schedule-toggle.is-today:hover,
+.subtask-schedule-toggle.is-today:focus-visible {
   background: color-mix(in srgb, var(--neon-orange) 13%, transparent);
   color: var(--neon-orange);
 }
 
-.today-toggle:focus-visible,
-.subtask-today-toggle:focus-visible {
-  outline: 2px solid var(--neon-orange);
+.schedule-toggle:focus-visible,
+.subtask-schedule-toggle:focus-visible {
+  outline: 2px solid currentColor;
   outline-offset: 2px;
 }
 
-.subtask-today-toggle {
+.subtask-schedule-toggle {
   width: 22px;
   height: 22px;
   display: grid;
@@ -4979,10 +5080,10 @@ body.theme-light .todo-item:hover { background: var(--panel-bg-strong); }
   opacity: 0.4;
 }
 
-.subtask-item:hover .subtask-today-toggle,
-.subtask-item:focus-within .subtask-today-toggle { opacity: 1; }
+.subtask-item:hover .subtask-schedule-toggle,
+.subtask-item:focus-within .subtask-schedule-toggle { opacity: 1; }
 
-.subtask-today-toggle svg,
+.subtask-schedule-toggle svg,
 .today-child-actions .subtask-desc-btn svg {
   width: 15px;
   height: 15px;
@@ -4993,7 +5094,7 @@ body.theme-light .todo-item:hover { background: var(--panel-bg-strong); }
   stroke-linejoin: round;
 }
 
-.today-view .task-section-heading h2::before {
+.planned-date-view .task-section-heading h2::before {
   content: '';
   display: inline-block;
   width: 5px;
@@ -5007,6 +5108,10 @@ body.theme-light .todo-item:hover { background: var(--panel-bg-strong); }
 
 .today-parent-card::before,
 .today-child-card::before { background: var(--neon-orange); }
+
+.tomorrow-view .task-section-heading h2::before,
+.tomorrow-view .today-parent-card::before,
+.tomorrow-view .today-child-card::before { background: var(--neon-blue); }
 
 .today-parent-card.done::before,
 .today-child-card.done::before { background: var(--neon-green); }
@@ -5025,6 +5130,10 @@ body.theme-light .todo-item:hover { background: var(--panel-bg-strong); }
   transform: translateX(2px);
   border-color: color-mix(in srgb, var(--neon-orange) 40%, var(--panel-border));
   background: var(--panel-bg-strong);
+}
+
+.tomorrow-view .today-child-card.subtask-item:hover {
+  border-color: color-mix(in srgb, var(--neon-blue) 40%, var(--panel-border));
 }
 
 .today-child-main {
@@ -5046,6 +5155,8 @@ body.theme-light .todo-item:hover { background: var(--panel-bg-strong); }
   color: var(--neon-orange);
   font: 700 0.56rem/1.2 var(--utility-font);
 }
+
+.tomorrow-view .today-item-kind { color: var(--neon-blue); }
 
 .today-child-card .subtask-text {
   display: block;
@@ -5249,7 +5360,7 @@ body.theme-light .todo-item:hover { background: var(--panel-bg-strong); }
 }
 
 @media (hover: none) {
-  .subtask-today-toggle { opacity: 1; }
+  .subtask-schedule-toggle { opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {

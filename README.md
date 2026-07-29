@@ -28,10 +28,10 @@ The application is built with HTML, responsive CSS, and modular Vanilla JavaScri
 
 - Create parent tasks and subtasks, edit titles and descriptions inline, mark work as complete, collapse task groups, and clear completed items in bulk.
 - Keep active subtasks in focus while completed subtasks sit in a remembered collapsible section inside each active parent task.
-- Add parent tasks or subtasks independently to Today, focus on the current day's plan, and carry unfinished items forward.
+- Schedule parent tasks or subtasks independently for Today or Tomorrow, adjust the date from a compact task menu, and carry unfinished items into Today.
 - Create, reorder, inline-rename, and delete custom groups, then move parent tasks and their subtasks between groups individually or in bulk.
 - Reorder tasks and subtasks with drag and drop so the most important work stays at the top.
-- Start in Today on first use, then return to the most recently opened Today view or task group.
+- Start in Today on first use, then return to the most recently opened Today, Tomorrow, or task-group view.
 - Focus on active tasks by default and reveal completed tasks in a remembered collapsible section at the bottom of each group.
 - Collapse the desktop sidebar to a single quiet reveal button, or use the group drawer on mobile screens.
 - Review completion rates, task statistics, subtask progress, and timestamps at a glance.
@@ -49,4 +49,4 @@ The application is built with HTML, responsive CSS, and modular Vanilla JavaScri
 
 ## Database upgrade
 
-Before deploying this version, run the latest [`supabase-schema.sql`](supabase-schema.sql) in the Supabase SQL Editor. The migration incrementally adds group storage, task group fields, and the planned date used by Today. Existing tasks remain unchanged and appear under the built-in Unassigned group.
+Before deploying this version, run the latest [`supabase-schema.sql`](supabase-schema.sql) in the Supabase SQL Editor. The migration incrementally adds group storage, task group fields, and the planned date used by the daily planning views. Existing tasks remain unchanged and appear under the built-in Unassigned group.

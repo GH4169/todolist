@@ -22,8 +22,10 @@ const workspaceSummary = document.getElementById('workspaceSummary');
 const activeTaskCount = document.getElementById('activeTaskCount');
 const completedTaskCount = document.getElementById('completedTaskCount');
 const todayTaskCount = document.getElementById('todayTaskCount');
+const tomorrowTaskCount = document.getElementById('tomorrowTaskCount');
 const categoryList = document.getElementById('categoryList');
 const todayTasksNav = document.getElementById('todayTasksNav');
+const tomorrowTasksNav = document.getElementById('tomorrowTasksNav');
 const newTaskCategorySelect = document.getElementById('newTaskCategorySelect');
 const composerCategory = document.getElementById('composerCategory');
 const appRoot = document.getElementById('appView');
@@ -42,6 +44,7 @@ const showSidebarTimeSetting = document.getElementById('showSidebarTimeSetting')
 const showQuoteSetting = document.getElementById('showQuoteSetting');
 const showTaskTimesSetting = document.getElementById('showTaskTimesSetting');
 const categoryContextMenu = document.getElementById('categoryContextMenu');
+const datePlanMenu = document.getElementById('datePlanMenu');
 const deleteCategoryDialog = document.getElementById('deleteCategoryDialog');
 const todayCarryover = document.getElementById('todayCarryover');
 const todayCarryoverList = document.getElementById('todayCarryoverList');
@@ -56,11 +59,12 @@ const SIDEBAR_TIME_STORAGE_PREFIX = 'geek-todos-sidebar-time:';
 const QUOTE_VISIBLE_STORAGE_PREFIX = 'geek-todos-quote-visible:';
 const ACTIVE_CATEGORY_STORAGE_PREFIX = 'geek-todos-active-category:';
 const EXPANDED_CATEGORIES_STORAGE_PREFIX = 'geek-todos-expanded-categories:';
-const TODAY_COMPOSER_CATEGORY_STORAGE_PREFIX = 'geek-todos-today-composer-category:';
+const PLANNED_COMPOSER_CATEGORY_STORAGE_PREFIX = 'geek-todos-today-composer-category:';
 const TODAY_CATEGORY_ID = 'today';
+const TOMORROW_CATEGORY_ID = 'tomorrow';
 const UNASSIGNED_CATEGORY_ID = 'unassigned';
 let activeCategoryId = TODAY_CATEGORY_ID;
-let todayComposerCategoryId = null;
+let plannedComposerCategoryId = null;
 let expandedCategoryIds = new Set();
 let expandedCompletedSubtaskTodoIds = new Set();
 let showTaskTimes = false;
@@ -72,6 +76,8 @@ let lastMoveUndo = null;
 let toastTimer = null;
 let contextMenuCategoryId = null;
 let contextMenuReturnFocus = null;
+let datePlanItemId = null;
+let datePlanReturnFocus = null;
 let currentLocalDateKey = getLocalDateKey();
 
 // 记录展开的描述区域 key: "todoId" 或 "todoId:subId"
@@ -159,16 +165,16 @@ function saveActiveCategory() {
   saveString(ACTIVE_CATEGORY_STORAGE_PREFIX, activeCategoryId);
 }
 
-function saveTodayComposerCategory() {
-  saveString(TODAY_COMPOSER_CATEGORY_STORAGE_PREFIX, todayComposerCategoryId || '');
+function savePlannedComposerCategory() {
+  saveString(PLANNED_COMPOSER_CATEGORY_STORAGE_PREFIX, plannedComposerCategoryId || '');
 }
 
-function restoreTodayComposerCategory(userId) {
-  const savedCategoryId = getSavedString(TODAY_COMPOSER_CATEGORY_STORAGE_PREFIX, userId, '');
-  todayComposerCategoryId = savedCategoryId && getCategoryById(savedCategoryId)
+function restorePlannedComposerCategory(userId) {
+  const savedCategoryId = getSavedString(PLANNED_COMPOSER_CATEGORY_STORAGE_PREFIX, userId, '');
+  plannedComposerCategoryId = savedCategoryId && getCategoryById(savedCategoryId)
     ? savedCategoryId
     : null;
-  if (savedCategoryId && !todayComposerCategoryId) saveTodayComposerCategory();
+  if (savedCategoryId && !plannedComposerCategoryId) savePlannedComposerCategory();
 }
 
 function saveExpandedCategories() {
@@ -188,7 +194,7 @@ function loadExpandedCategories(userId) {
 }
 
 function isValidCategoryId(categoryId) {
-  if (categoryId === TODAY_CATEGORY_ID) return true;
+  if (categoryId === TODAY_CATEGORY_ID || categoryId === TOMORROW_CATEGORY_ID) return true;
   if (categoryId === UNASSIGNED_CATEGORY_ID) return todos.some(todo => !todo.categoryId);
   return Boolean(getCategoryById(categoryId));
 }
@@ -199,7 +205,7 @@ function restoreCategoryNavigationState(userId) {
 
   const savedExpandedIds = loadExpandedCategories(userId);
   expandedCategoryIds = savedExpandedIds ?? new Set(
-    activeCategoryId === TODAY_CATEGORY_ID ? [] : [activeCategoryId]
+    isPlannedDateView() ? [] : [activeCategoryId]
   );
   expandedCategoryIds = new Set([...expandedCategoryIds].filter(id => (
     id === UNASSIGNED_CATEGORY_ID
@@ -434,9 +440,47 @@ function getLocalDateKey(date = new Date()) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-function formatTodayHeading(date = new Date()) {
+function getRelativeLocalDate(offset = 0, baseDate = new Date()) {
+  return new Date(
+    baseDate.getFullYear(),
+    baseDate.getMonth(),
+    baseDate.getDate() + offset,
+    12
+  );
+}
+
+function formatDateHeading(date) {
   const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
   return `${date.getMonth() + 1}月${date.getDate()}日 · ${weekdays[date.getDay()]}`;
+}
+
+function formatShortDate(date) {
+  return `${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
+function getPlannedViewConfig(categoryId = activeCategoryId, baseDate = new Date()) {
+  const configs = {
+    [TODAY_CATEGORY_ID]: {
+      offset: 0,
+      title: '今日待办',
+      relativeLabel: '今天',
+      emptyTitle: '今天还没有安排',
+      clearedTitle: '今日进行中已经清空',
+      emptyHint: '先安排一件最重要的事',
+    },
+    [TOMORROW_CATEGORY_ID]: {
+      offset: 1,
+      title: '明日待办',
+      relativeLabel: '明天',
+      emptyTitle: '明天还没有安排',
+      clearedTitle: '明日进行中已经清空',
+      emptyHint: '给明天留下一件重要的事',
+    },
+  };
+  const config = configs[categoryId];
+  if (!config) return null;
+  const date = getRelativeLocalDate(config.offset, baseDate);
+  return { ...config, categoryId, date, dateKey: getLocalDateKey(date) };
 }
 
 function getTaskEntries() {
@@ -446,9 +490,21 @@ function getTaskEntries() {
   ]);
 }
 
+function getPlannedEntries(dateKey) {
+  if (!dateKey) return [];
+  return getTaskEntries().filter(({ item }) => item.plannedDate === dateKey);
+}
+
 function getTodayEntries() {
-  const today = getLocalDateKey();
-  return getTaskEntries().filter(({ item }) => item.plannedDate === today);
+  return getPlannedEntries(getPlannedViewConfig(TODAY_CATEGORY_ID).dateKey);
+}
+
+function getTomorrowEntries() {
+  return getPlannedEntries(getPlannedViewConfig(TOMORROW_CATEGORY_ID).dateKey);
+}
+
+function getActivePlannedEntries() {
+  return getPlannedEntries(getPlannedViewConfig()?.dateKey);
 }
 
 function getCarryoverEntries() {
@@ -462,10 +518,19 @@ function isTodayView() {
   return activeCategoryId === TODAY_CATEGORY_ID;
 }
 
+function isTomorrowView() {
+  return activeCategoryId === TOMORROW_CATEGORY_ID;
+}
+
+function isPlannedDateView() {
+  return Boolean(getPlannedViewConfig());
+}
+
 function matchesCategory(todo, categoryId = activeCategoryId) {
-  if (categoryId === TODAY_CATEGORY_ID) {
-    const today = getLocalDateKey();
-    return todo.plannedDate === today || todo.subtasks.some(item => item.plannedDate === today);
+  const plannedView = getPlannedViewConfig(categoryId);
+  if (plannedView) {
+    return todo.plannedDate === plannedView.dateKey
+      || todo.subtasks.some(item => item.plannedDate === plannedView.dateKey);
   }
   if (categoryId === UNASSIGNED_CATEGORY_ID) return !todo.categoryId;
   return todo.categoryId === categoryId;
@@ -485,12 +550,12 @@ function categoryOptionHtml(selectedCategoryId = null) {
 }
 
 function syncCategorySelects() {
-  if (todayComposerCategoryId && !getCategoryById(todayComposerCategoryId)) {
-    todayComposerCategoryId = null;
-    saveTodayComposerCategory();
+  if (plannedComposerCategoryId && !getCategoryById(plannedComposerCategoryId)) {
+    plannedComposerCategoryId = null;
+    savePlannedComposerCategory();
   }
-  const composerValue = isTodayView()
-    ? todayComposerCategoryId
+  const composerValue = isPlannedDateView()
+    ? plannedComposerCategoryId
     : newTaskCategorySelect.value;
   newTaskCategorySelect.innerHTML = categoryOptionHtml(composerValue || null);
   if (composerValue && getCategoryById(composerValue)) newTaskCategorySelect.value = composerValue;
@@ -504,23 +569,26 @@ function syncCategorySelects() {
 }
 
 function syncComposerCategory() {
-  const isCrossCategoryView = isTodayView();
+  const isCrossCategoryView = isPlannedDateView();
   composerCategory.hidden = !isCrossCategoryView;
   if (isCrossCategoryView && !newTaskCategorySelect.value) newTaskCategorySelect.value = '';
 
   const targetName = isCrossCategoryView
     ? getCategoryName(newTaskCategorySelect.value || null)
     : (activeCategoryId === UNASSIGNED_CATEGORY_ID ? '未分组' : getCategoryName(activeCategoryId));
-  input.placeholder = isTodayView()
-    ? `添加到「${targetName}」并安排今天`
+  const plannedView = getPlannedViewConfig();
+  input.placeholder = plannedView
+    ? `添加到「${targetName}」并安排${plannedView.relativeLabel}`
     : `添加到「${targetName}」`;
 }
 
 function setActiveCategory(categoryId) {
   const validId = categoryId === TODAY_CATEGORY_ID
+    || categoryId === TOMORROW_CATEGORY_ID
     || categoryId === UNASSIGNED_CATEGORY_ID
     || Boolean(getCategoryById(categoryId));
   activeCategoryId = validId ? categoryId : TODAY_CATEGORY_ID;
+  closeDatePlanMenu();
   saveActiveCategory();
   taskWorkspace.hidden = false;
   settingsView.hidden = true;
@@ -608,7 +676,10 @@ function renderCategoryNavigation() {
   categoryList.innerHTML = unassignedRow + customRows;
   todayTasksNav.classList.toggle('active', activeCategoryId === TODAY_CATEGORY_ID);
   todayTasksNav.toggleAttribute('aria-current', activeCategoryId === TODAY_CATEGORY_ID);
+  tomorrowTasksNav.classList.toggle('active', activeCategoryId === TOMORROW_CATEGORY_ID);
+  tomorrowTasksNav.toggleAttribute('aria-current', activeCategoryId === TOMORROW_CATEGORY_ID);
   todayTaskCount.textContent = getTodayEntries().filter(({ item }) => !item.done).length;
+  tomorrowTaskCount.textContent = getTomorrowEntries().filter(({ item }) => !item.done).length;
   syncCategorySelects();
 }
 
@@ -1052,7 +1123,8 @@ function syncDescriptionDom(todoId, subId) {
 async function addTodo() {
   const text = input.value.trim();
   if (!text) return;
-  const categoryId = activeCategoryId === TODAY_CATEGORY_ID
+  const plannedView = getPlannedViewConfig();
+  const categoryId = plannedView
     ? (newTaskCategorySelect.value || null)
     : (activeCategoryId === UNASSIGNED_CATEGORY_ID ? null : activeCategoryId);
   try {
@@ -1060,7 +1132,7 @@ async function addTodo() {
       text,
       categoryId,
       position: 0,
-      plannedDate: isTodayView() ? getLocalDateKey() : null,
+      plannedDate: plannedView?.dateKey || null,
     });
     const alreadyPresent = Boolean(findTodoItem(todo.id));
     rememberLocalCreate(todo.id);
@@ -1074,19 +1146,25 @@ async function addTodo() {
   }
 }
 
-async function toggleTodayPlan(id) {
+async function setTodoPlannedDate(id, plannedDate) {
   const state = findTodoItem(id);
   if (!state) return;
 
-  const today = getLocalDateKey();
   const previousPlannedDate = state.item.plannedDate;
-  const plannedDate = previousPlannedDate === today ? null : today;
+  if (previousPlannedDate === plannedDate) return;
   state.item.plannedDate = plannedDate;
   render();
 
   try {
     await updateTodoWithRealtimeEcho(id, { plannedDate });
-    showToast(plannedDate ? '已加入今日待办' : '已移出今日待办');
+    const today = getPlannedViewConfig(TODAY_CATEGORY_ID).dateKey;
+    const tomorrow = getPlannedViewConfig(TOMORROW_CATEGORY_ID).dateKey;
+    const message = plannedDate === today
+      ? '已安排到今天'
+      : plannedDate === tomorrow
+        ? '已安排到明天'
+        : '已取消日期安排';
+    showToast(message);
   } catch (error) {
     if (state.item.plannedDate === plannedDate) state.item.plannedDate = previousPlannedDate;
     render();
@@ -1116,8 +1194,10 @@ async function moveCarryoverItemToToday(id) {
   await moveEntriesToToday([{ todo: state.todo, item: state.item, isSubtask: Boolean(state.item.parentId) }]);
 }
 
-async function clearTodayCompleted() {
-  const completedEntries = getTodayEntries().filter(({ item }) => item.done);
+async function clearPlannedDateCompleted() {
+  const plannedView = getPlannedViewConfig();
+  if (!plannedView) return;
+  const completedEntries = getActivePlannedEntries().filter(({ item }) => item.done);
   if (completedEntries.length === 0) return;
 
   completedEntries.forEach(({ item }) => { item.plannedDate = null; });
@@ -1126,7 +1206,7 @@ async function clearTodayCompleted() {
     await Promise.all(completedEntries.map(({ item }) => (
       updateTodoWithRealtimeEcho(item.id, { plannedDate: null })
     )));
-    showToast(`已收起 ${completedEntries.length} 项今日已完成`);
+    showToast(`已从${plannedView.title}收起 ${completedEntries.length} 项已完成任务`);
   } catch (error) {
     await restoreCloudState(error);
   }
@@ -1192,7 +1272,7 @@ async function toggleSubtask(todoId, subId) {
     const shouldPreviewMove = done
       && !previousParentDone
       && !parentDone
-      && !isTodayView();
+      && !isPlannedDateView();
     if (shouldPreviewMove) previewCompletedSubtaskMove(t, sub);
     else syncSubtaskCompletionDom(t, sub);
 
@@ -1374,8 +1454,8 @@ async function deleteTodo(id) {
 }
 
 async function clearCompleted() {
-  if (isTodayView()) {
-    await clearTodayCompleted();
+  if (isPlannedDateView()) {
+    await clearPlannedDateCompleted();
     return;
   }
   const doneIds = new Set(getScopedTodos().filter(t => t.done).map(t => t.id));
@@ -1574,8 +1654,8 @@ function startEditDescription(todoId, subId, { isNewDescription = false } = {}) 
 // ============================================================
 
 function updateProgress() {
-  if (isTodayView()) {
-    const entries = getTodayEntries();
+  if (isPlannedDateView()) {
+    const entries = getActivePlannedEntries();
     const completedCount = entries.filter(({ item }) => item.done).length;
     const percent = entries.length > 0 ? Math.round((completedCount / entries.length) * 100) : 0;
     progressCircle.style.strokeDashoffset = entries.length > 0
@@ -1608,8 +1688,8 @@ function updateProgress() {
 }
 
 function updateSideStats() {
-  if (isTodayView()) {
-    const entries = getTodayEntries();
+  if (isPlannedDateView()) {
+    const entries = getActivePlannedEntries();
     const done = entries.filter(({ item }) => item.done).length;
     workspaceSummary.textContent = `${entries.length - done} 项进行中 · ${done} 项已完成`;
     return;
@@ -1650,13 +1730,14 @@ function getVisibleTodos() {
 }
 
 function getEmptyStateHtml(scopedTodos = getScopedTodos()) {
-  if (isTodayView()) {
-    const hasTodayEntries = getTodayEntries().length > 0;
+  const plannedView = getPlannedViewConfig();
+  if (plannedView) {
+    const hasPlannedEntries = getActivePlannedEntries().length > 0;
     return `
       <li class="empty-state today-empty-state">
         <div class="empty-icon"><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="8" y="10" width="32" height="30" rx="5"/><path d="M16 7v7M32 7v7M8 19h32"/><path class="empty-accent" d="m17 29 5 5 10-11"/></svg></div>
-        <h3>${hasTodayEntries ? '今日进行中已经清空' : '今天还没有安排'}</h3>
-        <p>${hasTodayEntries ? '已完成事项收在下方' : '先安排一件最重要的事'}</p>
+        <h3>${hasPlannedEntries ? plannedView.clearedTitle : plannedView.emptyTitle}</h3>
+        <p>${hasPlannedEntries ? '已完成事项收在下方' : plannedView.emptyHint}</p>
       </li>`;
   }
 
@@ -1699,17 +1780,30 @@ function renderSubtaskTimeContentHtml(subtask) {
     ${completedTime}`;
 }
 
-function renderTodayToggleButton(item, { subtask = false } = {}) {
-  const isToday = item.plannedDate === getLocalDateKey();
-  const label = isToday ? '移出今日待办' : '加入今日待办';
+function renderDatePlanButton(item, { subtask = false } = {}) {
+  const today = getPlannedViewConfig(TODAY_CATEGORY_ID).dateKey;
+  const tomorrow = getPlannedViewConfig(TOMORROW_CATEGORY_ID).dateKey;
+  const isToday = item.plannedDate === today;
+  const isTomorrow = item.plannedDate === tomorrow;
+  const isScheduled = Boolean(item.plannedDate);
+  const label = isToday
+    ? '安排日期：今天'
+    : isTomorrow
+      ? '安排日期：明天'
+      : isScheduled
+        ? `安排日期：${item.plannedDate}`
+        : '安排日期';
   const stateIcon = isToday
     ? '<path class="today-check" d="m8.5 15 2 2 4-4"/>'
-    : '<path class="today-plus" d="M12 13v6M9 16h6"/>';
+    : isTomorrow
+      ? '<path class="tomorrow-arrow" d="M8 15h8M13 12l3 3-3 3"/>'
+      : '<path class="date-plus" d="M12 13v6M9 16h6"/>';
+  const stateClass = isToday ? 'is-today' : isTomorrow ? 'is-tomorrow' : isScheduled ? 'is-scheduled' : '';
   const classes = subtask
-    ? `subtask-today-toggle ${isToday ? 'is-today' : ''}`
-    : `action-btn today-toggle ${isToday ? 'is-today' : ''}`;
+    ? `subtask-schedule-toggle ${stateClass}`
+    : `action-btn schedule-toggle ${stateClass}`;
   return `
-    <button class="${classes}" type="button" data-action="toggle-today" data-id="${item.id}" title="${label}" aria-label="${label}" aria-pressed="${isToday}">
+    <button class="${classes}" type="button" data-action="open-date-menu" data-id="${item.id}" title="${label}" aria-label="${label}" aria-haspopup="menu" aria-expanded="false">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>${stateIcon}</svg>
     </button>`;
 }
@@ -1724,7 +1818,7 @@ function renderSubtaskHtml(todo, subtask) {
         </button>
         <div class="subtask-body">
           <div class="subtask-actions">
-            ${renderTodayToggleButton(subtask, { subtask: true })}
+            ${renderDatePlanButton(subtask, { subtask: true })}
             <button class="subtask-desc-btn ${subtask.description ? 'has-desc' : ''}" type="button" data-action="toggle-desc" data-todo-id="${todo.id}" data-sub-id="${subtask.id}" title="详情描述" aria-label="详情描述">
               <svg class="desc-icon" viewBox="0 0 16 16" width="12" height="12" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v7a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 11.5v-7z"/>
@@ -1793,7 +1887,7 @@ function renderTodoHtml(t, { todayCompact = false } = {}) {
   const completedSubtasks = t.subtasks.filter(subtask => subtask.done);
   const doneCount = completedSubtasks.length;
   const subAddRowHtml = renderSubtaskAddRowHtml(t.id);
-  const categoryBadgeHtml = activeCategoryId === TODAY_CATEGORY_ID
+  const categoryBadgeHtml = isPlannedDateView()
     ? `<span class="task-category-badge"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h7l2 2h9v10H3z"/></svg>${escapeHtml(getCategoryName(t.categoryId))}</span>`
     : '';
 
@@ -1836,7 +1930,7 @@ function renderTodoHtml(t, { todayCompact = false } = {}) {
         </div>
         ${!todayCompact && subtaskCount > 0 ? renderCollapseToggleHtml(t) : ''}
         <div class="todo-actions">
-          ${renderTodayToggleButton(t)}
+          ${renderDatePlanButton(t)}
           ${todayCompact ? '' : `<button class="action-btn sub-add-action" type="button" data-action="show-sub-add" data-todo-id="${t.id}" title="添加子任务" aria-label="添加子任务" aria-controls="sub-add-${t.id}" aria-expanded="false">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
           </button>`}
@@ -1879,7 +1973,7 @@ function renderTodaySubtaskHtml(todo, subtask) {
           </div>
         </div>
         <div class="today-child-actions">
-          ${renderTodayToggleButton(subtask, { subtask: true })}
+          ${renderDatePlanButton(subtask, { subtask: true })}
           <button class="subtask-desc-btn ${subtask.description ? 'has-desc' : ''}" type="button" data-action="toggle-desc" data-todo-id="${todo.id}" data-sub-id="${subtask.id}" title="详情描述" aria-label="详情描述">
             <svg class="desc-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v7a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 11.5v-7z"/><path d="M5.5 6.5h5M5.5 9h3.5"/></svg>
           </button>
@@ -1935,18 +2029,20 @@ function getTodoElement(id) {
 }
 
 function updateListSummary() {
-  if (isTodayView()) {
-    const entries = getTodayEntries();
+  const plannedView = getPlannedViewConfig();
+  if (plannedView) {
+    const entries = getActivePlannedEntries();
     const activeCountValue = entries.filter(({ item }) => !item.done).length;
     const completedCountValue = entries.length - activeCountValue;
+    const viewLabel = plannedView.title.replace('待办', '');
     countText.textContent = entries.length === 0
-      ? '今日暂无安排'
-      : `今日进行中 ${activeCountValue} · 共 ${entries.length} 项`;
+      ? `${viewLabel}暂无安排`
+      : `${viewLabel}进行中 ${activeCountValue} · 共 ${entries.length} 项`;
     activeTaskCount.textContent = activeCountValue;
     completedTaskCount.textContent = completedCountValue;
     clearBtn.style.display = completedCountValue > 0 ? 'inline-grid' : 'none';
-    clearBtn.title = '收起今日已完成';
-    clearBtn.setAttribute('aria-label', '收起今日已完成');
+    clearBtn.title = `收起${viewLabel}已完成`;
+    clearBtn.setAttribute('aria-label', `收起${viewLabel}已完成`);
     updateProgress();
     updateSideStats();
     return;
@@ -1968,9 +2064,11 @@ function updateListSummary() {
 }
 
 function render() {
+  closeDatePlanMenu();
   const hasUnassignedTodos = todos.some(todo => !todo.categoryId);
   let activeCategoryChanged = false;
   if (activeCategoryId !== TODAY_CATEGORY_ID
+    && activeCategoryId !== TOMORROW_CATEGORY_ID
     && activeCategoryId !== UNASSIGNED_CATEGORY_ID
     && !getCategoryById(activeCategoryId)) {
     activeCategoryId = hasUnassignedTodos ? UNASSIGNED_CATEGORY_ID : TODAY_CATEGORY_ID;
@@ -1982,8 +2080,9 @@ function render() {
   }
   if (activeCategoryChanged) saveActiveCategory();
   const scopedTodos = getVisibleTodos();
-  if (isTodayView()) {
-    const entries = getTodayEntries();
+  const plannedView = getPlannedViewConfig();
+  if (plannedView) {
+    const entries = getActivePlannedEntries();
     const activeEntries = entries.filter(({ item }) => !item.done);
     const completedEntries = entries.filter(({ item }) => item.done);
     activeList.innerHTML = activeEntries.length > 0
@@ -2002,13 +2101,15 @@ function render() {
   }
   completedList.hidden = !completedExpanded;
 
+  taskWorkspace.classList.toggle('planned-date-view', isPlannedDateView());
   taskWorkspace.classList.toggle('today-view', isTodayView());
-  if (activeCategoryId === TODAY_CATEGORY_ID) {
-    workspaceLabel.textContent = `TODOLIST · ${formatTodayHeading()}`;
-    workspaceTitle.textContent = '今日待办';
+  taskWorkspace.classList.toggle('tomorrow-view', isTomorrowView());
+  if (plannedView) {
+    workspaceLabel.textContent = `TODOLIST · ${formatDateHeading(plannedView.date)}`;
+    workspaceTitle.textContent = plannedView.title;
   } else if (activeCategoryId === UNASSIGNED_CATEGORY_ID) workspaceTitle.textContent = '未分组';
   else workspaceTitle.textContent = getCategoryName(activeCategoryId);
-  if (!isTodayView()) workspaceLabel.textContent = 'TODOLIST · 专注工作台';
+  if (!plannedView) workspaceLabel.textContent = 'TODOLIST · 专注工作台';
 
   renderCarryover();
   renderCategoryNavigation();
@@ -2169,6 +2270,7 @@ function showToast(message, undoAction = null) {
 
 function setAccountMenuOpen(open) {
   const expanded = Boolean(open);
+  if (expanded) closeDatePlanMenu();
   accountMenuPanel.hidden = !expanded;
   accountMenuToggle.setAttribute('aria-expanded', String(expanded));
   sidebarProfileArea.classList.toggle('menu-open', expanded);
@@ -2335,6 +2437,7 @@ function openCategoryContextMenu(id, { x, y, anchor = null, focusMenu = true } =
   const category = getCategoryById(id);
   if (!category) return;
 
+  closeDatePlanMenu();
   closeCategoryContextMenu();
   setAccountMenuOpen(false);
   contextMenuCategoryId = id;
@@ -2354,6 +2457,60 @@ function openCategoryContextMenu(id, { x, y, anchor = null, focusMenu = true } =
   if (focusMenu) {
     requestAnimationFrame(() => categoryContextMenu.querySelector('[role="menuitem"]')?.focus());
   }
+}
+
+function closeDatePlanMenu({ restoreFocus = false } = {}) {
+  const returnFocus = datePlanReturnFocus;
+  if (returnFocus?.isConnected) returnFocus.setAttribute('aria-expanded', 'false');
+  datePlanMenu.hidden = true;
+  datePlanMenu.removeAttribute('style');
+  datePlanItemId = null;
+  datePlanReturnFocus = null;
+  if (restoreFocus && returnFocus?.isConnected) returnFocus.focus();
+}
+
+function openDatePlanMenu(id, anchor) {
+  const state = findTodoItem(id);
+  if (!state || !anchor) return;
+  if (!datePlanMenu.hidden && datePlanItemId === id) {
+    closeDatePlanMenu({ restoreFocus: true });
+    return;
+  }
+
+  closeDatePlanMenu();
+  closeCategoryContextMenu();
+  setAccountMenuOpen(false);
+  datePlanItemId = id;
+  datePlanReturnFocus = anchor;
+
+  const todayView = getPlannedViewConfig(TODAY_CATEGORY_ID);
+  const tomorrowView = getPlannedViewConfig(TOMORROW_CATEGORY_ID);
+  document.getElementById('datePlanTodayLabel').textContent = formatShortDate(todayView.date);
+  document.getElementById('datePlanTomorrowLabel').textContent = formatShortDate(tomorrowView.date);
+  datePlanMenu.setAttribute('aria-label', `安排“${state.item.text}”的日期`);
+
+  const todayButton = datePlanMenu.querySelector('[data-date-plan-action="today"]');
+  const tomorrowButton = datePlanMenu.querySelector('[data-date-plan-action="tomorrow"]');
+  const clearButton = datePlanMenu.querySelector('[data-date-plan-action="clear"]');
+  todayButton.setAttribute('aria-checked', String(state.item.plannedDate === todayView.dateKey));
+  tomorrowButton.setAttribute('aria-checked', String(state.item.plannedDate === tomorrowView.dateKey));
+  clearButton.disabled = !state.item.plannedDate;
+
+  datePlanMenu.hidden = false;
+  anchor.setAttribute('aria-expanded', 'true');
+  const anchorRect = anchor.getBoundingClientRect();
+  const menuRect = datePlanMenu.getBoundingClientRect();
+  const preferredX = anchorRect.right - menuRect.width;
+  const preferredY = anchorRect.bottom + 5;
+  const left = Math.max(8, Math.min(preferredX, window.innerWidth - menuRect.width - 8));
+  const top = Math.max(8, Math.min(preferredY, window.innerHeight - menuRect.height - 8));
+  datePlanMenu.style.left = `${left}px`;
+  datePlanMenu.style.top = `${top}px`;
+
+  requestAnimationFrame(() => {
+    const selected = datePlanMenu.querySelector('[role="menuitemradio"][aria-checked="true"]');
+    (selected || todayButton).focus();
+  });
 }
 
 function openDeleteCategoryDialog(id) {
@@ -2714,10 +2871,10 @@ list.addEventListener('click', (e) => {
     toggleTodo(todoId);
   } else if (action === 'delete') {
     deleteTodo(actionEl.dataset.id);
-  } else if (action === 'toggle-today') {
+  } else if (action === 'open-date-menu') {
     e.preventDefault();
     e.stopPropagation();
-    toggleTodayPlan(actionEl.dataset.id);
+    openDatePlanMenu(actionEl.dataset.id, actionEl);
   } else if (action === 'toggle-sub') {
     e.preventDefault();
     e.stopPropagation();
@@ -2830,9 +2987,9 @@ input.addEventListener('keydown', (e) => {
 });
 
 newTaskCategorySelect.addEventListener('change', () => {
-  if (isTodayView()) {
-    todayComposerCategoryId = newTaskCategorySelect.value || null;
-    saveTodayComposerCategory();
+  if (isPlannedDateView()) {
+    plannedComposerCategoryId = newTaskCategorySelect.value || null;
+    savePlannedComposerCategory();
   }
   syncComposerCategory();
 });
@@ -2840,6 +2997,7 @@ completedToggle.addEventListener('click', () => setCompletedExpanded(!completedE
 clearBtn.addEventListener('click', clearCompleted);
 
 todayTasksNav.addEventListener('click', () => setActiveCategory(TODAY_CATEGORY_ID));
+tomorrowTasksNav.addEventListener('click', () => setActiveCategory(TOMORROW_CATEGORY_ID));
 carryAllToTodayBtn.addEventListener('click', () => moveEntriesToToday(getCarryoverEntries()));
 todayCarryoverList.addEventListener('click', event => {
   const button = event.target.closest('[data-carryover-id]');
@@ -2923,6 +3081,41 @@ categoryContextMenu.addEventListener('click', event => {
   else if (action === 'delete') openDeleteCategoryDialog(categoryId);
 });
 
+datePlanMenu.addEventListener('click', event => {
+  const menuItem = event.target.closest('[data-date-plan-action]');
+  const itemId = datePlanItemId;
+  if (!menuItem || !itemId || menuItem.disabled) return;
+  const action = menuItem.dataset.datePlanAction;
+  const plannedDate = action === 'today'
+    ? getPlannedViewConfig(TODAY_CATEGORY_ID).dateKey
+    : action === 'tomorrow'
+      ? getPlannedViewConfig(TOMORROW_CATEGORY_ID).dateKey
+      : null;
+  closeDatePlanMenu();
+  void setTodoPlannedDate(itemId, plannedDate);
+});
+
+datePlanMenu.addEventListener('keydown', event => {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeDatePlanMenu({ restoreFocus: true });
+    return;
+  }
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+  event.preventDefault();
+  const items = [...datePlanMenu.querySelectorAll('button:not(:disabled)')];
+  if (items.length === 0) return;
+  const currentIndex = items.indexOf(document.activeElement);
+  const nextIndex = event.key === 'Home'
+    ? 0
+    : event.key === 'End'
+      ? items.length - 1
+      : event.key === 'ArrowDown'
+        ? (currentIndex + 1 + items.length) % items.length
+        : (currentIndex - 1 + items.length) % items.length;
+  items[nextIndex].focus();
+});
+
 categoryList.addEventListener('dragstart', (event) => {
   const dragHeader = event.target.closest('[data-category-drag-id]');
   const row = event.target.closest('[data-category-row-id]');
@@ -2994,6 +3187,10 @@ settingsCloseBtn.addEventListener('click', showTaskWorkspace);
 
 document.addEventListener('click', event => {
   if (!sidebarProfileArea.contains(event.target)) setAccountMenuOpen(false);
+  if (!datePlanMenu.contains(event.target)
+    && !event.target.closest('[data-action="open-date-menu"]')) {
+    closeDatePlanMenu();
+  }
   if (!categoryContextMenu.contains(event.target)
     && !event.target.closest('[data-action="open-category-menu"]')) {
     closeCategoryContextMenu();
@@ -3002,6 +3199,11 @@ document.addEventListener('click', event => {
 
 document.addEventListener('keydown', event => {
   if (event.key !== 'Escape') return;
+  if (!datePlanMenu.hidden) {
+    event.preventDefault();
+    closeDatePlanMenu({ restoreFocus: true });
+    return;
+  }
   if (!categoryContextMenu.hidden) {
     event.preventDefault();
     closeCategoryContextMenu({ restoreFocus: true });
@@ -3014,8 +3216,14 @@ document.addEventListener('keydown', event => {
   }
 });
 
-window.addEventListener('resize', () => closeCategoryContextMenu());
-window.addEventListener('scroll', () => closeCategoryContextMenu(), true);
+window.addEventListener('resize', () => {
+  closeCategoryContextMenu();
+  closeDatePlanMenu();
+});
+window.addEventListener('scroll', () => {
+  closeCategoryContextMenu();
+  closeDatePlanMenu();
+}, true);
 
 showSidebarTimeSetting.addEventListener('change', () => setSidebarTimeVisible(showSidebarTimeSetting.checked, { persist: true }));
 showQuoteSetting.addEventListener('change', () => setSidebarQuoteVisible(showQuoteSetting.checked, { persist: true }));
@@ -3183,7 +3391,7 @@ async function startTodoApp(user) {
     await Promise.all([loadCategories(), loadTodos()]);
     if (sessionVersion !== appSessionVersion || activeUserId !== user.id) return;
     restoreCategoryNavigationState(user.id);
-    restoreTodayComposerCategory(user.id);
+    restorePlannedComposerCategory(user.id);
     restoreExpandedCompletedSubtasks(user.id);
     openDescriptions = loadOpenDescriptions(todos);
     render();
@@ -3201,6 +3409,7 @@ async function startTodoApp(user) {
 function stopTodoApp() {
   appSessionVersion += 1;
   closeCategoryContextMenu();
+  closeDatePlanMenu();
   if (deleteCategoryDialog.open) deleteCategoryDialog.close();
   activeUserId = null;
   clearTimeout(realtimeRefreshTimer);
@@ -3225,7 +3434,7 @@ function stopTodoApp() {
   setSidebarTimeVisible(true);
   setSidebarQuoteVisible(true);
   activeCategoryId = TODAY_CATEGORY_ID;
-  todayComposerCategoryId = null;
+  plannedComposerCategoryId = null;
 }
 
 window.addEventListener('beforeunload', () => {
