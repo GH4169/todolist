@@ -1134,12 +1134,11 @@ async function addTodo() {
       position: 0,
       plannedDate: plannedView?.dateKey || null,
     });
-    const alreadyPresent = Boolean(findTodoItem(todo.id));
     rememberLocalCreate(todo.id);
     const affectedTodoIds = upsertTodoItem(todo);
     input.value = '';
     input.focus();
-    if (!alreadyPresent) renderChangedTodos(affectedTodoIds);
+    renderChangedTodos(affectedTodoIds);
     await saveParentTodoPositions(updateTodoWithRealtimeEcho);
   } catch (error) {
     await restoreCloudState(error);
