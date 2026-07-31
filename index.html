@@ -192,6 +192,13 @@
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
               </button>
             </div>
+            <div class="composer-goal-row" id="composerGoalRow" hidden>
+              <span class="composer-goal-marker" aria-hidden="true"></span>
+              <div>
+                <label for="completionGoalInput" id="completionGoalInputLabel">今日完成目标</label>
+                <input type="text" id="completionGoalInput" maxlength="500" autocomplete="off" placeholder="今天至少推进到哪里？（可选）">
+              </div>
+            </div>
           </div>
 
           <div class="task-list-shell" id="todoLists">
@@ -374,6 +381,37 @@
         <label for="bulkCategorySelect">移动到</label>
         <select id="bulkCategorySelect"></select>
         <div class="dialog-actions"><span></span><span></span><button class="dialog-secondary" type="button" data-dialog-close="bulkOrganizeDialog">取消</button><button class="dialog-primary" type="submit">移动所选任务</button></div>
+      </form>
+    </dialog>
+
+    <dialog class="app-dialog completion-goal-dialog" id="completionGoalDialog">
+      <form id="completionGoalForm">
+        <div class="dialog-heading">
+          <div><span>阶段承诺</span><h2>完成目标</h2></div>
+          <button type="button" data-dialog-close="completionGoalDialog" title="关闭" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+        </div>
+        <p class="completion-goal-task" id="completionGoalTask"></p>
+        <label for="completionGoalDate">目标日期</label>
+        <input id="completionGoalDate" type="date" required>
+        <label for="completionGoalContent">需要推进到</label>
+        <textarea id="completionGoalContent" maxlength="500" required placeholder="例如：完成第二章初稿，至少写到 5000 字"></textarea>
+        <div class="completion-goal-carried" id="completionGoalCarried" hidden>
+          <span id="completionGoalCarriedLabel"></span>
+          <p id="completionGoalCarriedContent"></p>
+          <button id="usePreviousGoalBtn" type="button">沿用这条文字</button>
+        </div>
+        <button class="completion-history-toggle" id="completionGoalHistoryToggle" type="button" aria-expanded="false" aria-controls="completionGoalHistory">
+          <svg viewBox="0 0 12 12" aria-hidden="true"><polyline points="2,3 6,8 10,3" /></svg>
+          <span id="completionGoalHistoryLabel">历史目标 0</span>
+        </button>
+        <div class="completion-goal-history" id="completionGoalHistory" hidden></div>
+        <p class="completion-goal-status" id="completionGoalStatus" role="status" aria-live="polite"></p>
+        <div class="dialog-actions completion-goal-actions">
+          <button class="dialog-danger" id="deleteCompletionGoalBtn" type="button" hidden>删除这条</button>
+          <span></span>
+          <button class="dialog-secondary" type="button" data-dialog-close="completionGoalDialog">取消</button>
+          <button class="dialog-primary" id="saveCompletionGoalBtn" type="submit">保存目标</button>
+        </div>
       </form>
     </dialog>
 

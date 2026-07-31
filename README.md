@@ -29,6 +29,7 @@ The application is built with HTML, responsive CSS, and modular Vanilla JavaScri
 - Create parent tasks and subtasks, edit titles and descriptions inline, mark work as complete, collapse task groups, and clear completed items in bulk.
 - Keep active subtasks in focus while completed subtasks sit in a remembered collapsible section inside each active parent task.
 - Schedule parent tasks or subtasks independently for Today or Tomorrow, adjust the date from a compact task menu, and carry unfinished items into Today.
+- Save date-specific completion goals for parent tasks and subtasks, show the current or nearest relevant goal on each card, and manage goal history from a focused editor.
 - Create, reorder, inline-rename, and delete custom groups, then move parent tasks and their subtasks between groups individually or in bulk.
 - Reorder tasks and subtasks with drag and drop so the most important work stays at the top.
 - Start in Today on first use, then return to the most recently opened Today, Tomorrow, or task-group view.

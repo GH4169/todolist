@@ -28,6 +28,9 @@ const todayTasksNav = document.getElementById('todayTasksNav');
 const tomorrowTasksNav = document.getElementById('tomorrowTasksNav');
 const newTaskCategorySelect = document.getElementById('newTaskCategorySelect');
 const composerCategory = document.getElementById('composerCategory');
+const composerGoalRow = document.getElementById('composerGoalRow');
+const completionGoalInput = document.getElementById('completionGoalInput');
+const completionGoalInputLabel = document.getElementById('completionGoalInputLabel');
 const appRoot = document.getElementById('appView');
 const sidebar = document.getElementById('sidebar');
 const sidebarToggle = document.getElementById('sidebarToggle');
@@ -49,6 +52,20 @@ const deleteCategoryDialog = document.getElementById('deleteCategoryDialog');
 const todayCarryover = document.getElementById('todayCarryover');
 const todayCarryoverList = document.getElementById('todayCarryoverList');
 const carryAllToTodayBtn = document.getElementById('carryAllToTodayBtn');
+const completionGoalDialog = document.getElementById('completionGoalDialog');
+const completionGoalForm = document.getElementById('completionGoalForm');
+const completionGoalTask = document.getElementById('completionGoalTask');
+const completionGoalDate = document.getElementById('completionGoalDate');
+const completionGoalContent = document.getElementById('completionGoalContent');
+const completionGoalCarried = document.getElementById('completionGoalCarried');
+const completionGoalCarriedLabel = document.getElementById('completionGoalCarriedLabel');
+const completionGoalCarriedContent = document.getElementById('completionGoalCarriedContent');
+const completionGoalHistoryToggle = document.getElementById('completionGoalHistoryToggle');
+const completionGoalHistoryLabel = document.getElementById('completionGoalHistoryLabel');
+const completionGoalHistory = document.getElementById('completionGoalHistory');
+const completionGoalStatus = document.getElementById('completionGoalStatus');
+const deleteCompletionGoalBtn = document.getElementById('deleteCompletionGoalBtn');
+const saveCompletionGoalBtn = document.getElementById('saveCompletionGoalBtn');
 
 const circumference = 2 * Math.PI * 60;
 const TIME_VISIBILITY_STORAGE_PREFIX = 'geek-todos-show-times:';
@@ -84,6 +101,7 @@ let currentLocalDateKey = getLocalDateKey();
 let openDescriptions = new Set();
 let todoChannel = null;
 let categoryChannel = null;
+let completionGoalChannel = null;
 let realtimeRefreshTimer = null;
 const pendingRealtimeEchoes = new Map();
 const pendingDescriptionSaves = new Map();
@@ -93,6 +111,10 @@ const recentLocalCreates = new Map();
 const recentLocalDeletes = new Map();
 let activeUserId = null;
 let appSessionVersion = 0;
+let completionGoalTodoId = null;
+let completionGoalEditingId = null;
+let completionGoalReturnFocus = null;
+let completionGoalHistoryLimit = 5;
 
 // ---- 激励语池 ----
 const quotes = [
@@ -458,6 +480,59 @@ function formatShortDate(date) {
   return `${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
+function formatGoalDate(dateKey) {
+  if (!dateKey) return '';
+  const [, month, day] = dateKey.split('-').map(Number);
+  return `${month}月${day}日`;
+}
+
+function sortCompletionGoals(goals = []) {
+  return [...goals].sort((a, b) => (
+    b.targetDate.localeCompare(a.targetDate)
+    || (b.updatedAt || 0) - (a.updatedAt || 0)
+  ));
+}
+
+function getGoalProjection(item, contextDate = null) {
+  const goals = sortCompletionGoals(item.completionGoals);
+  if (!contextDate) {
+    return goals[0] ? { goal: goals[0], state: 'latest' } : { goal: null, state: 'missing' };
+  }
+
+  const exact = goals.find(goal => goal.targetDate === contextDate);
+  if (exact) return { goal: exact, state: 'exact' };
+  const previous = goals.find(goal => goal.targetDate < contextDate);
+  return previous ? { goal: previous, state: 'carried' } : { goal: null, state: 'missing' };
+}
+
+function getCompletionGoalForDate(item, targetDate) {
+  return item.completionGoals?.find(goal => goal.targetDate === targetDate) || null;
+}
+
+function upsertCompletionGoalInMemory(goal) {
+  const state = findTodoItem(goal.todoId);
+  if (!state) return false;
+  const goals = state.item.completionGoals || (state.item.completionGoals = []);
+  const existingIndex = goals.findIndex(item => item.id === goal.id);
+  if (existingIndex === -1) goals.push(goal);
+  else goals[existingIndex] = goal;
+  goals.sort((a, b) => b.targetDate.localeCompare(a.targetDate));
+  return true;
+}
+
+function removeCompletionGoalFromMemory(goalId, todoId = null) {
+  const state = todoId ? findTodoItem(todoId) : null;
+  const candidates = state ? [state.item] : getTaskEntries().map(entry => entry.item);
+  for (const item of candidates) {
+    const index = item.completionGoals?.findIndex(goal => goal.id === goalId) ?? -1;
+    if (index !== -1) {
+      item.completionGoals.splice(index, 1);
+      return true;
+    }
+  }
+  return false;
+}
+
 function getPlannedViewConfig(categoryId = activeCategoryId, baseDate = new Date()) {
   const configs = {
     [TODAY_CATEGORY_ID]: {
@@ -571,6 +646,7 @@ function syncCategorySelects() {
 function syncComposerCategory() {
   const isCrossCategoryView = isPlannedDateView();
   composerCategory.hidden = !isCrossCategoryView;
+  composerGoalRow.hidden = !isCrossCategoryView;
   if (isCrossCategoryView && !newTaskCategorySelect.value) newTaskCategorySelect.value = '';
 
   const targetName = isCrossCategoryView
@@ -580,6 +656,11 @@ function syncComposerCategory() {
   input.placeholder = plannedView
     ? `添加到「${targetName}」并安排${plannedView.relativeLabel}`
     : `添加到「${targetName}」`;
+  if (plannedView) {
+    const dayLabel = isTomorrowView() ? '明日' : '今日';
+    completionGoalInputLabel.textContent = `${dayLabel}完成目标`;
+    completionGoalInput.placeholder = `${plannedView.relativeLabel}至少推进到哪里？（可选）`;
+  }
 }
 
 function setActiveCategory(categoryId) {
@@ -708,7 +789,8 @@ function upsertTodoItem(incoming) {
     const existing = todos.find(todo => todo.id === incoming.id);
     if (existing) {
       const subtasks = existing.subtasks;
-      Object.assign(existing, incoming, { subtasks });
+      const goals = existing.completionGoals || [];
+      Object.assign(existing, incoming, { subtasks, completionGoals: goals });
     } else {
       todos.push({ ...incoming, subtasks: incoming.subtasks || [] });
     }
@@ -736,7 +818,10 @@ function upsertTodoItem(incoming) {
   if (!parent) return null;
 
   const existing = parent.subtasks.find(subtask => subtask.id === incoming.id);
-  if (existing) Object.assign(existing, incoming, { subtasks: [] });
+  if (existing) {
+    const goals = existing.completionGoals || [];
+    Object.assign(existing, incoming, { subtasks: [], completionGoals: goals });
+  }
   else parent.subtasks.push({ ...incoming, subtasks: [] });
   parent.subtasks.sort(compareTodoOrder);
   syncOpenDescription(incoming);
@@ -1124,6 +1209,7 @@ async function addTodo() {
   const text = input.value.trim();
   if (!text) return;
   const plannedView = getPlannedViewConfig();
+  const goalContent = plannedView ? completionGoalInput.value.trim() : '';
   const categoryId = plannedView
     ? (newTaskCategorySelect.value || null)
     : (activeCategoryId === UNASSIGNED_CATEGORY_ID ? null : activeCategoryId);
@@ -1135,8 +1221,22 @@ async function addTodo() {
       plannedDate: plannedView?.dateKey || null,
     });
     rememberLocalCreate(todo.id);
+    if (goalContent) {
+      try {
+        const goal = await upsertCompletionGoalForDate({
+          todoId: todo.id,
+          targetDate: plannedView.dateKey,
+          content: goalContent,
+        });
+        todo.completionGoals = [goal];
+      } catch (goalError) {
+        showCloudError(goalError);
+        showToast('任务已创建，完成目标保存失败，可稍后补写');
+      }
+    }
     const affectedTodoIds = upsertTodoItem(todo);
     input.value = '';
+    completionGoalInput.value = '';
     input.focus();
     renderChangedTodos(affectedTodoIds);
     await saveParentTodoPositions(updateTodoWithRealtimeEcho);
@@ -1145,7 +1245,7 @@ async function addTodo() {
   }
 }
 
-async function setTodoPlannedDate(id, plannedDate) {
+async function setTodoPlannedDate(id, plannedDate, { returnFocus = null } = {}) {
   const state = findTodoItem(id);
   if (!state) return;
 
@@ -1164,6 +1264,12 @@ async function setTodoPlannedDate(id, plannedDate) {
         ? '已安排到明天'
         : '已取消日期安排';
     showToast(message);
+    if (plannedDate && !getCompletionGoalForDate(state.item, plannedDate)) {
+      openCompletionGoalDialog(id, {
+        targetDate: plannedDate,
+        returnFocus,
+      });
+    }
   } catch (error) {
     if (state.item.plannedDate === plannedDate) state.item.plannedDate = previousPlannedDate;
     render();
@@ -1182,6 +1288,12 @@ async function moveEntriesToToday(entries) {
       updateTodoWithRealtimeEcho(item.id, { plannedDate: today })
     )));
     showToast(entries.length === 1 ? '已移到今日待办' : `已将 ${entries.length} 项移到今天`);
+    const missingGoals = entries.filter(({ item }) => !getCompletionGoalForDate(item, today));
+    if (entries.length === 1 && missingGoals.length === 1) {
+      openCompletionGoalDialog(missingGoals[0].item.id, { targetDate: today });
+    } else if (missingGoals.length > 0) {
+      showToast(`已移到今天，其中 ${missingGoals.length} 项待补今日完成目标`);
+    }
   } catch (error) {
     await restoreCloudState(error);
   }
@@ -1807,6 +1919,53 @@ function renderDatePlanButton(item, { subtask = false } = {}) {
     </button>`;
 }
 
+function renderCompletionGoalBlock(item, { plannedView = getPlannedViewConfig() } = {}) {
+  const contextDate = plannedView?.dateKey || null;
+  const projection = getGoalProjection(item, contextDate);
+  if (!plannedView && !projection.goal) return '';
+
+  const targetDate = projection.state === 'carried'
+    ? contextDate
+    : (projection.goal?.targetDate || contextDate || item.plannedDate || getLocalDateKey());
+  const relativeLabel = isTomorrowView() ? '明日' : '今日';
+  const label = projection.state === 'exact'
+    ? `${relativeLabel}完成目标`
+    : projection.state === 'carried'
+      ? `上次目标 · ${formatGoalDate(projection.goal.targetDate)}`
+      : projection.state === 'latest'
+        ? `完成目标 · ${formatGoalDate(projection.goal.targetDate)}`
+        : `设定${relativeLabel}完成目标`;
+  const content = projection.goal?.content || `${plannedView.relativeLabel}至少推进到哪里？`;
+  const carriedAction = projection.state === 'carried'
+    ? `<span class="completion-goal-update">更新${relativeLabel}目标</span>`
+    : '';
+  const stateClass = projection.state === 'missing' ? 'is-missing' : `is-${projection.state}`;
+  const ariaLabel = projection.state === 'carried'
+    ? `为“${item.text}”更新${relativeLabel}完成目标`
+    : projection.goal
+    ? `编辑“${item.text}”${formatGoalDate(targetDate)}的完成目标`
+    : `为“${item.text}”设定${relativeLabel}完成目标`;
+
+  return `
+    <button class="completion-goal-block ${stateClass}" type="button" data-action="open-completion-goal" data-id="${item.id}" data-goal-date="${targetDate}" ${projection.goal && projection.state !== 'carried' ? `data-goal-id="${projection.goal.id}"` : ''} aria-label="${escapeHtml(ariaLabel)}">
+      <span class="completion-goal-rule" aria-hidden="true"></span>
+      <span class="completion-goal-copy">
+        <span class="completion-goal-label">${label}</span>
+        <span class="completion-goal-content">${escapeHtml(content)}</span>
+      </span>
+      ${carriedAction}
+    </button>`;
+}
+
+function renderCompletionGoalAction(item, { subtask = false } = {}) {
+  const classes = subtask ? 'subtask-goal-btn' : 'action-btn completion-goal-action';
+  const targetDate = item.plannedDate || getLocalDateKey();
+  return `
+    <button class="${classes}" type="button" data-action="open-completion-goal" data-id="${item.id}" data-goal-date="${targetDate}" title="完成目标" aria-label="编辑完成目标">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 9h8M8 13h5"/><path d="m14 17 2 2 4-5"/></svg>
+    </button>`;
+}
+
 function renderSubtaskHtml(todo, subtask) {
   return `
     <li class="subtask-item ${subtask.done ? 'done' : ''}" data-todo-id="${todo.id}" data-id="${subtask.id}" draggable="true">
@@ -1817,6 +1976,7 @@ function renderSubtaskHtml(todo, subtask) {
         </button>
         <div class="subtask-body">
           <div class="subtask-actions">
+            ${renderCompletionGoalAction(subtask, { subtask: true })}
             ${renderDatePlanButton(subtask, { subtask: true })}
             <button class="subtask-desc-btn ${subtask.description ? 'has-desc' : ''}" type="button" data-action="toggle-desc" data-todo-id="${todo.id}" data-sub-id="${subtask.id}" title="详情描述" aria-label="详情描述">
               <svg class="desc-icon" viewBox="0 0 16 16" width="12" height="12" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
@@ -1829,6 +1989,7 @@ function renderSubtaskHtml(todo, subtask) {
             </button>
           </div>
           <span class="subtask-text">${escapeHtml(subtask.text)}</span>
+          ${renderCompletionGoalBlock(subtask)}
           <div class="subtask-time">${renderSubtaskTimeContentHtml(subtask)}</div>
         </div>
       </div>
@@ -1922,6 +2083,7 @@ function renderTodoHtml(t, { todayCompact = false } = {}) {
         </button>
         <div class="todo-body">
           <div class="todo-text">${escapeHtml(t.text)}</div>
+          ${renderCompletionGoalBlock(t)}
           <div class="task-meta">${categoryBadgeHtml}<div class="task-time"><span class="task-time-label">创建于 ${formatTime(t.createdAt)}${t.done && t.completedAt ? ' · 完成于 ' + formatTime(t.completedAt) : ''}</span>${(todayCompact || t.collapsed) && subtaskCount > 0 ? `<span class="task-progress-meta ${doneCount === subtaskCount ? 'is-complete' : ''}" aria-label="子任务完成情况：${doneCount}/${subtaskCount}">子任务 ${doneCount}/${subtaskCount}</span>` : ''}</div></div>
           ${t.description || openDescriptions.has(t.id) ? `<div class="desc-section" data-id="${t.id}" style="display: ${openDescriptions.has(t.id) ? 'block' : 'none'};">
             <div class="desc-display">${t.description ? escapeHtml(t.description) : ''}</div>
@@ -1929,6 +2091,7 @@ function renderTodoHtml(t, { todayCompact = false } = {}) {
         </div>
         ${!todayCompact && subtaskCount > 0 ? renderCollapseToggleHtml(t) : ''}
         <div class="todo-actions">
+          ${renderCompletionGoalAction(t)}
           ${renderDatePlanButton(t)}
           ${todayCompact ? '' : `<button class="action-btn sub-add-action" type="button" data-action="show-sub-add" data-todo-id="${t.id}" title="添加子任务" aria-label="添加子任务" aria-controls="sub-add-${t.id}" aria-expanded="false">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
@@ -1965,6 +2128,7 @@ function renderTodaySubtaskHtml(todo, subtask) {
         <div class="today-child-body">
           <span class="today-item-kind">子任务</span>
           <div class="subtask-text">${escapeHtml(subtask.text)}</div>
+          ${renderCompletionGoalBlock(subtask)}
           <div class="today-item-source">
             <span>${escapeHtml(todo.text)}</span>
             <span aria-hidden="true">·</span>
@@ -1972,6 +2136,7 @@ function renderTodaySubtaskHtml(todo, subtask) {
           </div>
         </div>
         <div class="today-child-actions">
+          ${renderCompletionGoalAction(subtask, { subtask: true })}
           ${renderDatePlanButton(subtask, { subtask: true })}
           <button class="subtask-desc-btn ${subtask.description ? 'has-desc' : ''}" type="button" data-action="toggle-desc" data-todo-id="${todo.id}" data-sub-id="${subtask.id}" title="详情描述" aria-label="详情描述">
             <svg class="desc-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v7a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 11.5v-7z"/><path d="M5.5 6.5h5M5.5 9h3.5"/></svg>
@@ -2300,6 +2465,170 @@ function showSettings() {
   settingsView.hidden = false;
   settingsBtn.classList.add('active');
   closeMobileSidebar();
+}
+
+function getActiveCompletionGoalItem() {
+  return completionGoalTodoId ? findTodoItem(completionGoalTodoId)?.item || null : null;
+}
+
+function getEditingCompletionGoal() {
+  return getActiveCompletionGoalItem()?.completionGoals?.find(goal => goal.id === completionGoalEditingId) || null;
+}
+
+function renderCompletionGoalHistory() {
+  const item = getActiveCompletionGoalItem();
+  if (!item) return;
+  const goals = sortCompletionGoals(item.completionGoals);
+  completionGoalHistoryLabel.textContent = `历史目标 ${goals.length}`;
+  const visibleGoals = goals.slice(0, completionGoalHistoryLimit);
+  completionGoalHistory.innerHTML = visibleGoals.length === 0
+    ? '<p class="completion-history-empty">还没有历史目标。保存后会按日期积累在这里。</p>'
+    : `${visibleGoals.map(goal => `
+        <div class="completion-history-item ${goal.id === completionGoalEditingId ? 'is-current' : ''}">
+          <button type="button" data-goal-history-id="${goal.id}" aria-label="编辑 ${formatGoalDate(goal.targetDate)} 的完成目标">
+            <span><b>${formatGoalDate(goal.targetDate)}</b>${goal.id === completionGoalEditingId ? '<em>当前</em>' : ''}</span>
+            <p>${escapeHtml(goal.content)}</p>
+          </button>
+          <button class="completion-history-delete" type="button" data-delete-goal-id="${goal.id}" title="删除" aria-label="删除 ${formatGoalDate(goal.targetDate)} 的完成目标">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>`).join('')}
+      ${goals.length > visibleGoals.length ? '<button class="completion-history-more" type="button" data-goal-history-more>查看更多</button>' : ''}`;
+}
+
+function syncCompletionGoalFormForDate({ preferredGoalId = null, preserveContent = false } = {}) {
+  const item = getActiveCompletionGoalItem();
+  if (!item) return;
+  const existing = preferredGoalId
+    ? item.completionGoals.find(goal => goal.id === preferredGoalId)
+    : getCompletionGoalForDate(item, completionGoalDate.value);
+  completionGoalEditingId = existing?.id || null;
+  if (existing) {
+    if (!preserveContent) {
+      completionGoalDate.value = existing.targetDate;
+      completionGoalContent.value = existing.content;
+    }
+  } else if (!preserveContent) {
+    completionGoalContent.value = '';
+  }
+  deleteCompletionGoalBtn.hidden = !existing;
+
+  const previous = sortCompletionGoals(item.completionGoals)
+    .find(goal => goal.targetDate < completionGoalDate.value);
+  const isEditingSelectedDate = existing?.targetDate === completionGoalDate.value;
+  completionGoalCarried.hidden = Boolean(isEditingSelectedDate || !previous);
+  if (previous && !isEditingSelectedDate) {
+    completionGoalCarried.dataset.goalId = previous.id;
+    completionGoalCarriedLabel.textContent = `上次目标 · ${formatGoalDate(previous.targetDate)}`;
+    completionGoalCarriedContent.textContent = previous.content;
+  } else {
+    delete completionGoalCarried.dataset.goalId;
+  }
+  renderCompletionGoalHistory();
+}
+
+function openCompletionGoalDialog(todoId, { targetDate = null, goalId = null, returnFocus = null } = {}) {
+  const state = findTodoItem(todoId);
+  if (!state) return;
+  completionGoalTodoId = todoId;
+  completionGoalReturnFocus = returnFocus || document.activeElement;
+  completionGoalHistoryLimit = 5;
+  completionGoalTask.textContent = state.item.text;
+  completionGoalStatus.textContent = '';
+  completionGoalHistoryToggle.setAttribute('aria-expanded', 'false');
+  completionGoalHistory.hidden = true;
+  completionGoalDate.value = targetDate || state.item.plannedDate || getLocalDateKey();
+  syncCompletionGoalFormForDate({ preferredGoalId: goalId });
+  if (!completionGoalDialog.open) completionGoalDialog.showModal();
+  requestAnimationFrame(() => completionGoalContent.focus());
+}
+
+function resetCompletionGoalDialog() {
+  const returnTodoId = completionGoalTodoId;
+  completionGoalTodoId = null;
+  completionGoalEditingId = null;
+  completionGoalHistoryLimit = 5;
+  completionGoalStatus.textContent = '';
+  completionGoalContent.value = '';
+  const returnFocus = completionGoalReturnFocus;
+  completionGoalReturnFocus = null;
+  if (returnFocus?.isConnected) returnFocus.focus();
+  else if (returnTodoId) {
+    requestAnimationFrame(() => {
+      list.querySelector(`[data-action="open-completion-goal"][data-id="${returnTodoId}"]`)?.focus();
+    });
+  }
+}
+
+async function saveCompletionGoal(event) {
+  event.preventDefault();
+  const item = getActiveCompletionGoalItem();
+  const targetDate = completionGoalDate.value;
+  const content = completionGoalContent.value.trim();
+  if (!item || !targetDate || !content) return;
+
+  const editingGoal = getEditingCompletionGoal();
+  const conflictingGoal = item.completionGoals.find(goal => (
+    goal.targetDate === targetDate && goal.id !== editingGoal?.id
+  ));
+  if (conflictingGoal && !window.confirm(`${formatGoalDate(targetDate)}已有目标，是否用当前内容替换？`)) return;
+
+  saveCompletionGoalBtn.disabled = true;
+  deleteCompletionGoalBtn.disabled = true;
+  completionGoalDialog.setAttribute('aria-busy', 'true');
+  completionGoalStatus.textContent = '正在保存…';
+  try {
+    let saved;
+    if (conflictingGoal) {
+      saved = await updateCompletionGoalRecord(conflictingGoal.id, { content });
+      if (editingGoal) {
+        await deleteCompletionGoalRecord(editingGoal.id);
+        removeCompletionGoalFromMemory(editingGoal.id, item.id);
+      }
+    } else if (editingGoal) {
+      saved = await updateCompletionGoalRecord(editingGoal.id, { targetDate, content });
+    } else {
+      saved = await createCompletionGoalRecord({ todoId: item.id, targetDate, content });
+    }
+    upsertCompletionGoalInMemory(saved);
+    completionGoalEditingId = saved.id;
+    render();
+    showToast(`已保存 ${formatGoalDate(saved.targetDate)} 的完成目标`);
+    completionGoalDialog.close();
+  } catch (error) {
+    completionGoalStatus.textContent = error?.message || '保存失败，请稍后重试';
+  } finally {
+    saveCompletionGoalBtn.disabled = false;
+    deleteCompletionGoalBtn.disabled = false;
+    completionGoalDialog.removeAttribute('aria-busy');
+  }
+}
+
+async function deleteCompletionGoal(goalId = completionGoalEditingId) {
+  const item = getActiveCompletionGoalItem();
+  const goal = item?.completionGoals?.find(entry => entry.id === goalId);
+  if (!item || !goal) return;
+  if (!window.confirm(`删除 ${formatGoalDate(goal.targetDate)} 的完成目标？此操作无法撤销。`)) return;
+
+  deleteCompletionGoalBtn.disabled = true;
+  completionGoalStatus.textContent = '正在删除…';
+  try {
+    await deleteCompletionGoalRecord(goal.id);
+    removeCompletionGoalFromMemory(goal.id, item.id);
+    if (completionGoalEditingId === goal.id) {
+      completionGoalEditingId = null;
+      syncCompletionGoalFormForDate();
+    } else {
+      renderCompletionGoalHistory();
+    }
+    completionGoalStatus.textContent = '';
+    render();
+    showToast('已删除完成目标');
+  } catch (error) {
+    completionGoalStatus.textContent = error?.message || '删除失败，请稍后重试';
+  } finally {
+    deleteCompletionGoalBtn.disabled = false;
+  }
 }
 
 function closeDialog(id) {
@@ -2874,6 +3203,14 @@ list.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
     openDatePlanMenu(actionEl.dataset.id, actionEl);
+  } else if (action === 'open-completion-goal') {
+    e.preventDefault();
+    e.stopPropagation();
+    openCompletionGoalDialog(actionEl.dataset.id, {
+      targetDate: actionEl.dataset.goalDate,
+      goalId: actionEl.dataset.goalId || null,
+      returnFocus: actionEl,
+    });
   } else if (action === 'toggle-sub') {
     e.preventDefault();
     e.stopPropagation();
@@ -2984,6 +3321,12 @@ input.addEventListener('keydown', (e) => {
     addTodo();
   }
 });
+completionGoalInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.isComposing) {
+    e.preventDefault();
+    addTodo();
+  }
+});
 
 newTaskCategorySelect.addEventListener('change', () => {
   if (isPlannedDateView()) {
@@ -3085,13 +3428,14 @@ datePlanMenu.addEventListener('click', event => {
   const itemId = datePlanItemId;
   if (!menuItem || !itemId || menuItem.disabled) return;
   const action = menuItem.dataset.datePlanAction;
+  const returnFocus = datePlanReturnFocus;
   const plannedDate = action === 'today'
     ? getPlannedViewConfig(TODAY_CATEGORY_ID).dateKey
     : action === 'tomorrow'
       ? getPlannedViewConfig(TOMORROW_CATEGORY_ID).dateKey
       : null;
   closeDatePlanMenu();
-  void setTodoPlannedDate(itemId, plannedDate);
+  void setTodoPlannedDate(itemId, plannedDate, { returnFocus });
 });
 
 datePlanMenu.addEventListener('keydown', event => {
@@ -3232,6 +3576,46 @@ document.getElementById('categoryForm').addEventListener('submit', submitCategor
 document.getElementById('deleteCategoryForm').addEventListener('submit', submitDeleteCategory);
 document.getElementById('moveForm').addEventListener('submit', submitMoveForm);
 document.getElementById('bulkOrganizeForm').addEventListener('submit', submitBulkOrganize);
+completionGoalForm.addEventListener('submit', saveCompletionGoal);
+completionGoalDate.addEventListener('change', () => {
+  const editingGoal = getEditingCompletionGoal();
+  const isChangingEditingDate = editingGoal && editingGoal.targetDate !== completionGoalDate.value;
+  syncCompletionGoalFormForDate({
+    preferredGoalId: isChangingEditingDate ? editingGoal.id : null,
+    preserveContent: Boolean(isChangingEditingDate),
+  });
+});
+deleteCompletionGoalBtn.addEventListener('click', () => void deleteCompletionGoal());
+document.getElementById('usePreviousGoalBtn').addEventListener('click', () => {
+  const item = getActiveCompletionGoalItem();
+  const previous = item?.completionGoals?.find(goal => goal.id === completionGoalCarried.dataset.goalId);
+  if (previous) {
+    completionGoalContent.value = previous.content;
+    completionGoalContent.focus();
+  }
+});
+completionGoalHistoryToggle.addEventListener('click', () => {
+  const expanded = completionGoalHistory.hidden;
+  completionGoalHistory.hidden = !expanded;
+  completionGoalHistoryToggle.setAttribute('aria-expanded', String(expanded));
+});
+completionGoalHistory.addEventListener('click', event => {
+  const deleteButton = event.target.closest('[data-delete-goal-id]');
+  if (deleteButton) {
+    void deleteCompletionGoal(deleteButton.dataset.deleteGoalId);
+    return;
+  }
+  if (event.target.closest('[data-goal-history-more]')) {
+    completionGoalHistoryLimit += 5;
+    renderCompletionGoalHistory();
+    return;
+  }
+  const historyButton = event.target.closest('[data-goal-history-id]');
+  if (!historyButton) return;
+  syncCompletionGoalFormForDate({ preferredGoalId: historyButton.dataset.goalHistoryId });
+  completionGoalContent.focus();
+});
+completionGoalDialog.addEventListener('close', resetCompletionGoalDialog);
 document.querySelectorAll('[data-dialog-close]').forEach(button => {
   button.addEventListener('click', () => closeDialog(button.dataset.dialogClose));
 });
@@ -3348,10 +3732,24 @@ function scheduleRealtimeRefresh() {
   const expectedUserId = activeUserId;
   realtimeRefreshTimer = setTimeout(async () => {
     try {
+      const dialogState = completionGoalDialog.open && completionGoalTodoId
+        ? {
+            todoId: completionGoalTodoId,
+            targetDate: completionGoalDate.value,
+            goalId: completionGoalEditingId,
+            historyExpanded: !completionGoalHistory.hidden,
+          }
+        : null;
       await Promise.all([loadCategories(), loadTodos()]);
       if (activeUserId !== expectedUserId) return;
       openDescriptions = loadOpenDescriptions(todos);
       render();
+      if (dialogState && findTodoItem(dialogState.todoId)) {
+        completionGoalDate.value = dialogState.targetDate;
+        syncCompletionGoalFormForDate({ preferredGoalId: dialogState.goalId });
+        completionGoalHistory.hidden = !dialogState.historyExpanded;
+        completionGoalHistoryToggle.setAttribute('aria-expanded', String(dialogState.historyExpanded));
+      }
     } catch (error) {
       console.error('实时同步刷新失败:', error);
     }
@@ -3394,9 +3792,10 @@ async function startTodoApp(user) {
     restoreExpandedCompletedSubtasks(user.id);
     openDescriptions = loadOpenDescriptions(todos);
     render();
-    [todoChannel, categoryChannel] = await Promise.all([
+    [todoChannel, categoryChannel, completionGoalChannel] = await Promise.all([
       subscribeTodoChanges(user.id, handleRealtimeTodoChange),
       subscribeCategoryChanges(user.id, scheduleRealtimeRefresh),
+      subscribeCompletionGoalChanges(user.id, scheduleRealtimeRefresh),
     ]);
   } catch (error) {
     if (sessionVersion !== appSessionVersion) return;
@@ -3409,6 +3808,7 @@ function stopTodoApp() {
   appSessionVersion += 1;
   closeCategoryContextMenu();
   closeDatePlanMenu();
+  if (completionGoalDialog.open) completionGoalDialog.close();
   if (deleteCategoryDialog.open) deleteCategoryDialog.close();
   activeUserId = null;
   clearTimeout(realtimeRefreshTimer);
@@ -3421,8 +3821,10 @@ function stopTodoApp() {
   recentLocalDeletes.clear();
   unsubscribeTodoChanges(todoChannel);
   unsubscribeCategoryChanges(categoryChannel);
+  unsubscribeCompletionGoalChanges(completionGoalChannel);
   todoChannel = null;
   categoryChannel = null;
+  completionGoalChannel = null;
   setCurrentUser(null);
   openDescriptions = new Set();
   expandedCategoryIds = new Set();
@@ -3439,5 +3841,6 @@ function stopTodoApp() {
 window.addEventListener('beforeunload', () => {
   unsubscribeTodoChanges(todoChannel);
   unsubscribeCategoryChanges(categoryChannel);
+  unsubscribeCompletionGoalChanges(completionGoalChannel);
 });
 initAppShell();

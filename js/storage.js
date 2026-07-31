@@ -17,12 +17,14 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
 // main.js 使用的内存视图；Supabase 是唯一的任务持久化数据源。
 let todos = [];
 let categories = [];
+let completionGoals = [];
 let currentUserId = null;
 
 function setCurrentUser(user) {
   currentUserId = user?.id || null;
   todos = [];
   categories = [];
+  completionGoals = [];
 }
 
 function requireCurrentUserId() {
@@ -50,7 +52,42 @@ function mapRow(row) {
     completedAt: parseTime(row.completed_at),
     description: row.description || '',
     plannedDate: row.planned_date || null,
+    completionGoals: [],
   };
+}
+
+function mapCompletionGoalRow(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    todoId: row.todo_id,
+    targetDate: row.target_date,
+    content: row.content,
+    createdAt: parseTime(row.created_at),
+    updatedAt: parseTime(row.updated_at),
+  };
+}
+
+function compareCompletionGoalDate(a, b) {
+  return b.targetDate.localeCompare(a.targetDate)
+    || (b.updatedAt || 0) - (a.updatedAt || 0);
+}
+
+function attachCompletionGoals(items, goals = completionGoals) {
+  const itemById = new Map();
+  for (const todo of items) {
+    todo.completionGoals = [];
+    itemById.set(todo.id, todo);
+    for (const subtask of todo.subtasks) {
+      subtask.completionGoals = [];
+      itemById.set(subtask.id, subtask);
+    }
+  }
+
+  for (const goal of goals) {
+    itemById.get(goal.todoId)?.completionGoals.push(goal);
+  }
+  itemById.forEach(item => item.completionGoals.sort(compareCompletionGoalDate));
 }
 
 function toDatabaseChanges(changes) {
@@ -82,12 +119,15 @@ function toDatabaseChanges(changes) {
 /** 从云端读取所有任务，并组装为父任务/子任务结构。 */
 async function loadTodos() {
   const userId = requireCurrentUserId();
-  const { data, error } = await supabaseClient
-    .from('todos')
-    .select('*')
-    .eq('user_id', userId)
-    .order('position', { ascending: true })
-    .order('created_at', { ascending: false });
+  const [{ data, error }, goals] = await Promise.all([
+    supabaseClient
+      .from('todos')
+      .select('*')
+      .eq('user_id', userId)
+      .order('position', { ascending: true })
+      .order('created_at', { ascending: false }),
+    loadCompletionGoals(),
+  ]);
 
   if (error) throw error;
 
@@ -105,7 +145,77 @@ async function loadTodos() {
   });
 
   todos = parents;
+  attachCompletionGoals(todos, goals);
   return todos;
+}
+
+async function loadCompletionGoals() {
+  const userId = requireCurrentUserId();
+  const { data, error } = await supabaseClient
+    .from('todo_completion_goals')
+    .select('*')
+    .eq('user_id', userId)
+    .order('target_date', { ascending: false })
+    .order('updated_at', { ascending: false });
+
+  if (error) throw error;
+  completionGoals = data.map(mapCompletionGoalRow);
+  return completionGoals;
+}
+
+async function createCompletionGoalRecord({ todoId, targetDate, content }) {
+  const userId = requireCurrentUserId();
+  const { data, error } = await supabaseClient
+    .from('todo_completion_goals')
+    .insert({ todo_id: todoId, target_date: targetDate, content: content.trim(), user_id: userId })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapCompletionGoalRow(data);
+}
+
+async function updateCompletionGoalRecord(id, { targetDate, content }) {
+  const userId = requireCurrentUserId();
+  const changes = {};
+  if (targetDate !== undefined) changes.target_date = targetDate;
+  if (content !== undefined) changes.content = content.trim();
+  const { data, error } = await supabaseClient
+    .from('todo_completion_goals')
+    .update(changes)
+    .eq('id', id)
+    .eq('user_id', userId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapCompletionGoalRow(data);
+}
+
+async function deleteCompletionGoalRecord(id) {
+  const userId = requireCurrentUserId();
+  const { error } = await supabaseClient
+    .from('todo_completion_goals')
+    .delete()
+    .eq('id', id)
+    .eq('user_id', userId);
+
+  if (error) throw error;
+}
+
+async function upsertCompletionGoalForDate({ todoId, targetDate, content }) {
+  const userId = requireCurrentUserId();
+  const { data, error } = await supabaseClient
+    .from('todo_completion_goals')
+    .upsert(
+      { todo_id: todoId, target_date: targetDate, content: content.trim(), user_id: userId },
+      { onConflict: 'todo_id,target_date' }
+    )
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapCompletionGoalRow(data);
 }
 
 /** 新增父任务或子任务，并返回服务器生成 ID 后的完整记录。 */
@@ -323,10 +433,28 @@ async function subscribeCategoryChanges(userId, onChange) {
     .subscribe();
 }
 
+async function subscribeCompletionGoalChanges(userId, onChange) {
+  if (!userId || userId !== currentUserId) {
+    throw new Error('无法为未登录用户订阅完成目标');
+  }
+
+  await supabaseClient.realtime.setAuth();
+  return supabaseClient
+    .channel(`todo-completion-goals:${userId}`, { config: { private: true } })
+    .on('broadcast', { event: 'INSERT' }, message => onChange('INSERT', message))
+    .on('broadcast', { event: 'UPDATE' }, message => onChange('UPDATE', message))
+    .on('broadcast', { event: 'DELETE' }, message => onChange('DELETE', message))
+    .subscribe();
+}
+
 function unsubscribeTodoChanges(channel) {
   if (channel) supabaseClient.removeChannel(channel);
 }
 
 function unsubscribeCategoryChanges(channel) {
+  if (channel) supabaseClient.removeChannel(channel);
+}
+
+function unsubscribeCompletionGoalChanges(channel) {
   if (channel) supabaseClient.removeChannel(channel);
 }

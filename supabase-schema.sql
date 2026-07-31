@@ -32,6 +32,60 @@ create table if not exists public.todo_categories (
   constraint todo_categories_id_user_id_key unique (id, user_id)
 );
 
+create table if not exists public.todo_completion_goals (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  todo_id uuid not null,
+  target_date date not null,
+  content text not null check (length(trim(content)) between 1 and 500),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint todo_completion_goals_todo_owner_fkey foreign key (todo_id, user_id)
+    references public.todos(id, user_id) on delete cascade,
+  constraint todo_completion_goals_one_per_day unique (todo_id, target_date)
+);
+
+-- 兼容曾提前创建过目标表但字段不完整的部署。
+alter table public.todo_completion_goals add column if not exists user_id uuid;
+alter table public.todo_completion_goals add column if not exists todo_id uuid;
+alter table public.todo_completion_goals add column if not exists target_date date;
+alter table public.todo_completion_goals add column if not exists content text;
+alter table public.todo_completion_goals add column if not exists created_at timestamptz not null default now();
+alter table public.todo_completion_goals add column if not exists updated_at timestamptz not null default now();
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'todo_completion_goals_user_id_fkey'
+      and conrelid = 'public.todo_completion_goals'::regclass
+  ) then
+    alter table public.todo_completion_goals
+      add constraint todo_completion_goals_user_id_fkey
+      foreign key (user_id) references auth.users(id) on delete cascade;
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'todo_completion_goals_todo_owner_fkey'
+      and conrelid = 'public.todo_completion_goals'::regclass
+  ) then
+    alter table public.todo_completion_goals
+      add constraint todo_completion_goals_todo_owner_fkey
+      foreign key (todo_id, user_id) references public.todos(id, user_id) on delete cascade;
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'todo_completion_goals_one_per_day'
+      and conrelid = 'public.todo_completion_goals'::regclass
+  ) then
+    alter table public.todo_completion_goals
+      add constraint todo_completion_goals_one_per_day unique (todo_id, target_date);
+  end if;
+end
+$$;
+
 -- 现有任务保持 NULL，并由客户端显示为不可删除的“未分组”。
 alter table public.todos add column if not exists category_id uuid;
 alter table public.todos add column if not exists planned_date date;
@@ -67,6 +121,9 @@ create index if not exists todos_user_planned_date_idx
 create index if not exists todo_categories_user_position_idx
   on public.todo_categories(user_id, position);
 
+create index if not exists todo_completion_goals_user_todo_date_idx
+  on public.todo_completion_goals(user_id, todo_id, target_date desc);
+
 create or replace function public.set_todos_updated_at()
 returns trigger
 language plpgsql
@@ -88,8 +145,14 @@ create trigger set_todo_categories_updated_at
 before update on public.todo_categories
 for each row execute function public.set_todos_updated_at();
 
+drop trigger if exists set_todo_completion_goals_updated_at on public.todo_completion_goals;
+create trigger set_todo_completion_goals_updated_at
+before update on public.todo_completion_goals
+for each row execute function public.set_todos_updated_at();
+
 alter table public.todos enable row level security;
 alter table public.todo_categories enable row level security;
+alter table public.todo_completion_goals enable row level security;
 
 revoke all privileges on table public.todos from anon;
 revoke all privileges on table public.todos from public;
@@ -97,6 +160,9 @@ grant select, insert, update, delete on table public.todos to authenticated;
 revoke all privileges on table public.todo_categories from anon;
 revoke all privileges on table public.todo_categories from public;
 grant select, insert, update, delete on table public.todo_categories to authenticated;
+revoke all privileges on table public.todo_completion_goals from anon;
+revoke all privileges on table public.todo_completion_goals from public;
+grant select, insert, update, delete on table public.todo_completion_goals to authenticated;
 
 drop policy if exists "Users can view own todos" on public.todos;
 drop policy if exists "Users can create own todos" on public.todos;
@@ -140,6 +206,28 @@ with check (user_id = (select auth.uid()));
 
 create policy "Users can delete own todo categories"
 on public.todo_categories for delete to authenticated
+using (user_id = (select auth.uid()));
+
+drop policy if exists "Users can view own todo completion goals" on public.todo_completion_goals;
+drop policy if exists "Users can create own todo completion goals" on public.todo_completion_goals;
+drop policy if exists "Users can update own todo completion goals" on public.todo_completion_goals;
+drop policy if exists "Users can delete own todo completion goals" on public.todo_completion_goals;
+
+create policy "Users can view own todo completion goals"
+on public.todo_completion_goals for select to authenticated
+using (user_id = (select auth.uid()));
+
+create policy "Users can create own todo completion goals"
+on public.todo_completion_goals for insert to authenticated
+with check (user_id = (select auth.uid()));
+
+create policy "Users can update own todo completion goals"
+on public.todo_completion_goals for update to authenticated
+using (user_id = (select auth.uid()))
+with check (user_id = (select auth.uid()));
+
+create policy "Users can delete own todo completion goals"
+on public.todo_completion_goals for delete to authenticated
 using (user_id = (select auth.uid()));
 
 create or replace function public.broadcast_todo_changes()
@@ -192,6 +280,31 @@ create trigger broadcast_todo_category_changes
 after insert or update or delete on public.todo_categories
 for each row execute function public.broadcast_todo_category_changes();
 
+create or replace function public.broadcast_todo_completion_goal_changes()
+returns trigger
+security definer
+language plpgsql
+set search_path = ''
+as $$
+begin
+  perform realtime.broadcast_changes(
+    'todo-completion-goals:' || coalesce(new.user_id, old.user_id)::text,
+    tg_op,
+    tg_op,
+    tg_table_name,
+    tg_table_schema,
+    new,
+    old
+  );
+  return null;
+end;
+$$;
+
+drop trigger if exists broadcast_todo_completion_goal_changes on public.todo_completion_goals;
+create trigger broadcast_todo_completion_goal_changes
+after insert or update or delete on public.todo_completion_goals
+for each row execute function public.broadcast_todo_completion_goal_changes();
+
 drop policy if exists "Users can receive own todo broadcasts" on realtime.messages;
 create policy "Users can receive own todo broadcasts"
 on realtime.messages for select to authenticated
@@ -199,7 +312,8 @@ using (
   realtime.messages.extension = 'broadcast'
   and (select realtime.topic()) in (
     'todos:' || (select auth.uid())::text,
-    'todo-categories:' || (select auth.uid())::text
+    'todo-categories:' || (select auth.uid())::text,
+    'todo-completion-goals:' || (select auth.uid())::text
   )
 );
 
@@ -224,6 +338,16 @@ begin
       and tablename = 'todo_categories'
   ) then
     alter publication supabase_realtime drop table public.todo_categories;
+  end if;
+
+  if exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'todo_completion_goals'
+  ) then
+    alter publication supabase_realtime drop table public.todo_completion_goals;
   end if;
 end
 $$;
