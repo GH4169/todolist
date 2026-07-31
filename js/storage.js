@@ -18,6 +18,7 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
 let todos = [];
 let categories = [];
 let completionGoals = [];
+let completionReviews = [];
 let currentUserId = null;
 
 function setCurrentUser(user) {
@@ -25,6 +26,7 @@ function setCurrentUser(user) {
   todos = [];
   categories = [];
   completionGoals = [];
+  completionReviews = [];
 }
 
 function requireCurrentUserId() {
@@ -53,6 +55,7 @@ function mapRow(row) {
     description: row.description || '',
     plannedDate: row.planned_date || null,
     completionGoals: [],
+    completionReviews: [],
   };
 }
 
@@ -73,6 +76,25 @@ function compareCompletionGoalDate(a, b) {
     || (b.updatedAt || 0) - (a.updatedAt || 0);
 }
 
+function mapCompletionReviewRow(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    todoId: row.todo_id,
+    reviewDate: row.review_date,
+    result: row.result,
+    content: row.content,
+    goalContentSnapshot: row.goal_content_snapshot || null,
+    createdAt: parseTime(row.created_at),
+    updatedAt: parseTime(row.updated_at),
+  };
+}
+
+function compareCompletionReviewDate(a, b) {
+  return b.reviewDate.localeCompare(a.reviewDate)
+    || (b.updatedAt || 0) - (a.updatedAt || 0);
+}
+
 function attachCompletionGoals(items, goals = completionGoals) {
   const itemById = new Map();
   for (const todo of items) {
@@ -88,6 +110,23 @@ function attachCompletionGoals(items, goals = completionGoals) {
     itemById.get(goal.todoId)?.completionGoals.push(goal);
   }
   itemById.forEach(item => item.completionGoals.sort(compareCompletionGoalDate));
+}
+
+function attachCompletionReviews(items, reviews = completionReviews) {
+  const itemById = new Map();
+  for (const todo of items) {
+    todo.completionReviews = [];
+    itemById.set(todo.id, todo);
+    for (const subtask of todo.subtasks) {
+      subtask.completionReviews = [];
+      itemById.set(subtask.id, subtask);
+    }
+  }
+
+  for (const review of reviews) {
+    itemById.get(review.todoId)?.completionReviews.push(review);
+  }
+  itemById.forEach(item => item.completionReviews.sort(compareCompletionReviewDate));
 }
 
 function toDatabaseChanges(changes) {
@@ -119,7 +158,7 @@ function toDatabaseChanges(changes) {
 /** 从云端读取所有任务，并组装为父任务/子任务结构。 */
 async function loadTodos() {
   const userId = requireCurrentUserId();
-  const [{ data, error }, goals] = await Promise.all([
+  const [{ data, error }, goals, reviews] = await Promise.all([
     supabaseClient
       .from('todos')
       .select('*')
@@ -127,6 +166,7 @@ async function loadTodos() {
       .order('position', { ascending: true })
       .order('created_at', { ascending: false }),
     loadCompletionGoals(),
+    loadCompletionReviews(),
   ]);
 
   if (error) throw error;
@@ -146,6 +186,7 @@ async function loadTodos() {
 
   todos = parents;
   attachCompletionGoals(todos, goals);
+  attachCompletionReviews(todos, reviews);
   return todos;
 }
 
@@ -216,6 +257,101 @@ async function upsertCompletionGoalForDate({ todoId, targetDate, content }) {
 
   if (error) throw error;
   return mapCompletionGoalRow(data);
+}
+
+async function loadCompletionReviews() {
+  const userId = requireCurrentUserId();
+  const { data, error } = await supabaseClient
+    .from('todo_completion_reviews')
+    .select('*')
+    .eq('user_id', userId)
+    .order('review_date', { ascending: false })
+    .order('updated_at', { ascending: false });
+
+  if (error) throw error;
+  completionReviews = data.map(mapCompletionReviewRow);
+  return completionReviews;
+}
+
+async function createCompletionReviewRecord({ todoId, reviewDate, result, content, goalContentSnapshot }) {
+  const userId = requireCurrentUserId();
+  const { data, error } = await supabaseClient
+    .from('todo_completion_reviews')
+    .insert({
+      todo_id: todoId,
+      review_date: reviewDate,
+      result,
+      content: content.trim(),
+      goal_content_snapshot: goalContentSnapshot?.trim() || null,
+      user_id: userId,
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapCompletionReviewRow(data);
+}
+
+async function updateCompletionReviewRecord(id, {
+  reviewDate,
+  result,
+  content,
+  goalContentSnapshot,
+}) {
+  const userId = requireCurrentUserId();
+  const changes = {};
+  if (reviewDate !== undefined) changes.review_date = reviewDate;
+  if (result !== undefined) changes.result = result;
+  if (content !== undefined) changes.content = content.trim();
+  if (goalContentSnapshot !== undefined) {
+    changes.goal_content_snapshot = goalContentSnapshot?.trim() || null;
+  }
+  const { data, error } = await supabaseClient
+    .from('todo_completion_reviews')
+    .update(changes)
+    .eq('id', id)
+    .eq('user_id', userId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapCompletionReviewRow(data);
+}
+
+async function deleteCompletionReviewRecord(id) {
+  const userId = requireCurrentUserId();
+  const { error } = await supabaseClient
+    .from('todo_completion_reviews')
+    .delete()
+    .eq('id', id)
+    .eq('user_id', userId);
+
+  if (error) throw error;
+}
+
+async function upsertCompletionReviewForDate({
+  todoId,
+  reviewDate,
+  result,
+  content,
+  goalContentSnapshot,
+}) {
+  const userId = requireCurrentUserId();
+  const { data, error } = await supabaseClient
+    .from('todo_completion_reviews')
+    .upsert({
+      todo_id: todoId,
+      review_date: reviewDate,
+      result,
+      content: content.trim(),
+      goal_content_snapshot: goalContentSnapshot?.trim() || null,
+      user_id: userId,
+    }, { onConflict: 'todo_id,review_date' })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapCompletionReviewRow(data);
 }
 
 /** 新增父任务或子任务，并返回服务器生成 ID 后的完整记录。 */
@@ -447,6 +583,20 @@ async function subscribeCompletionGoalChanges(userId, onChange) {
     .subscribe();
 }
 
+async function subscribeCompletionReviewChanges(userId, onChange) {
+  if (!userId || userId !== currentUserId) {
+    throw new Error('无法为未登录用户订阅完成评价');
+  }
+
+  await supabaseClient.realtime.setAuth();
+  return supabaseClient
+    .channel(`todo-completion-reviews:${userId}`, { config: { private: true } })
+    .on('broadcast', { event: 'INSERT' }, message => onChange('INSERT', message))
+    .on('broadcast', { event: 'UPDATE' }, message => onChange('UPDATE', message))
+    .on('broadcast', { event: 'DELETE' }, message => onChange('DELETE', message))
+    .subscribe();
+}
+
 function unsubscribeTodoChanges(channel) {
   if (channel) supabaseClient.removeChannel(channel);
 }
@@ -456,5 +606,9 @@ function unsubscribeCategoryChanges(channel) {
 }
 
 function unsubscribeCompletionGoalChanges(channel) {
+  if (channel) supabaseClient.removeChannel(channel);
+}
+
+function unsubscribeCompletionReviewChanges(channel) {
   if (channel) supabaseClient.removeChannel(channel);
 }

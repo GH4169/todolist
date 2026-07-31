@@ -66,6 +66,19 @@ const completionGoalHistory = document.getElementById('completionGoalHistory');
 const completionGoalStatus = document.getElementById('completionGoalStatus');
 const deleteCompletionGoalBtn = document.getElementById('deleteCompletionGoalBtn');
 const saveCompletionGoalBtn = document.getElementById('saveCompletionGoalBtn');
+const completionReviewDialog = document.getElementById('completionReviewDialog');
+const completionReviewForm = document.getElementById('completionReviewForm');
+const completionReviewTask = document.getElementById('completionReviewTask');
+const completionReviewDate = document.getElementById('completionReviewDate');
+const completionReviewGoalContent = document.getElementById('completionReviewGoalContent');
+const completionReviewContent = document.getElementById('completionReviewContent');
+const completionReviewContentCount = document.getElementById('completionReviewContentCount');
+const completionReviewHistoryToggle = document.getElementById('completionReviewHistoryToggle');
+const completionReviewHistoryLabel = document.getElementById('completionReviewHistoryLabel');
+const completionReviewHistory = document.getElementById('completionReviewHistory');
+const completionReviewStatus = document.getElementById('completionReviewStatus');
+const deleteCompletionReviewBtn = document.getElementById('deleteCompletionReviewBtn');
+const saveCompletionReviewBtn = document.getElementById('saveCompletionReviewBtn');
 
 const circumference = 2 * Math.PI * 60;
 const TIME_VISIBILITY_STORAGE_PREFIX = 'geek-todos-show-times:';
@@ -102,6 +115,7 @@ let openDescriptions = new Set();
 let todoChannel = null;
 let categoryChannel = null;
 let completionGoalChannel = null;
+let completionReviewChannel = null;
 let realtimeRefreshTimer = null;
 const pendingRealtimeEchoes = new Map();
 const pendingDescriptionSaves = new Map();
@@ -115,6 +129,16 @@ let completionGoalTodoId = null;
 let completionGoalEditingId = null;
 let completionGoalReturnFocus = null;
 let completionGoalHistoryLimit = 5;
+let completionReviewTodoId = null;
+let completionReviewEditingId = null;
+let completionReviewReturnFocus = null;
+let completionReviewHistoryLimit = 5;
+
+const COMPLETION_REVIEW_RESULTS = {
+  achieved: { label: '已达成', className: 'is-achieved' },
+  partial: { label: '部分达成', className: 'is-partial' },
+  missed: { label: '未达成', className: 'is-missed' },
+};
 
 // ---- 激励语池 ----
 const quotes = [
@@ -533,6 +557,51 @@ function removeCompletionGoalFromMemory(goalId, todoId = null) {
   return false;
 }
 
+function sortCompletionReviews(reviews = []) {
+  return [...reviews].sort((a, b) => (
+    b.reviewDate.localeCompare(a.reviewDate)
+    || (b.updatedAt || 0) - (a.updatedAt || 0)
+  ));
+}
+
+function getCompletionReviewForDate(item, reviewDate) {
+  return item.completionReviews?.find(review => review.reviewDate === reviewDate) || null;
+}
+
+function getCompletionReviewResultConfig(result) {
+  const config = COMPLETION_REVIEW_RESULTS[result];
+  if (config) return config;
+  console.error('未知的完成评价结果:', result);
+  return { label: '未知结果', className: 'is-unknown' };
+}
+
+function upsertCompletionReviewInMemory(review) {
+  const state = findTodoItem(review.todoId);
+  if (!state) return false;
+  const reviews = state.item.completionReviews || (state.item.completionReviews = []);
+  const existingIndex = reviews.findIndex(item => item.id === review.id);
+  if (existingIndex === -1) reviews.push(review);
+  else reviews[existingIndex] = review;
+  reviews.sort((a, b) => (
+    b.reviewDate.localeCompare(a.reviewDate)
+    || (b.updatedAt || 0) - (a.updatedAt || 0)
+  ));
+  return true;
+}
+
+function removeCompletionReviewFromMemory(reviewId, todoId = null) {
+  const state = todoId ? findTodoItem(todoId) : null;
+  const candidates = state ? [state.item] : getTaskEntries().map(entry => entry.item);
+  for (const item of candidates) {
+    const index = item.completionReviews?.findIndex(review => review.id === reviewId) ?? -1;
+    if (index !== -1) {
+      item.completionReviews.splice(index, 1);
+      return true;
+    }
+  }
+  return false;
+}
+
 function getPlannedViewConfig(categoryId = activeCategoryId, baseDate = new Date()) {
   const configs = {
     [TODAY_CATEGORY_ID]: {
@@ -790,7 +859,8 @@ function upsertTodoItem(incoming) {
     if (existing) {
       const subtasks = existing.subtasks;
       const goals = existing.completionGoals || [];
-      Object.assign(existing, incoming, { subtasks, completionGoals: goals });
+      const reviews = existing.completionReviews || [];
+      Object.assign(existing, incoming, { subtasks, completionGoals: goals, completionReviews: reviews });
     } else {
       todos.push({ ...incoming, subtasks: incoming.subtasks || [] });
     }
@@ -820,7 +890,8 @@ function upsertTodoItem(incoming) {
   const existing = parent.subtasks.find(subtask => subtask.id === incoming.id);
   if (existing) {
     const goals = existing.completionGoals || [];
-    Object.assign(existing, incoming, { subtasks: [], completionGoals: goals });
+    const reviews = existing.completionReviews || [];
+    Object.assign(existing, incoming, { subtasks: [], completionGoals: goals, completionReviews: reviews });
   }
   else parent.subtasks.push({ ...incoming, subtasks: [] });
   parent.subtasks.sort(compareTodoOrder);
@@ -1966,6 +2037,50 @@ function renderCompletionGoalAction(item, { subtask = false } = {}) {
     </button>`;
 }
 
+function renderCompletionReviewBlock(item) {
+  if (!isTodayView()) return '';
+  const today = getLocalDateKey();
+  const review = getCompletionReviewForDate(item, today);
+  if (!review) {
+    return `
+      <button class="completion-review-block is-missing" type="button" data-action="open-completion-review" data-id="${item.id}" data-review-date="${today}" aria-label="评价“${escapeHtml(item.text)}”的今日完成情况">
+        <span class="completion-review-mark" aria-hidden="true">○</span>
+        <span class="completion-review-copy">
+          <span class="completion-review-heading">评价今日完成情况</span>
+          <span class="completion-review-content">写下实际做到哪里</span>
+        </span>
+      </button>`;
+  }
+
+  const resultConfig = getCompletionReviewResultConfig(review.result);
+  return `
+    <button class="completion-review-block ${resultConfig.className}" type="button" data-action="open-completion-review" data-id="${item.id}" data-review-date="${today}" data-review-id="${review.id}" aria-label="编辑“${escapeHtml(item.text)}”的今日完成评价：${resultConfig.label}">
+      <span class="completion-review-mark" aria-hidden="true">✓</span>
+      <span class="completion-review-copy">
+        <span class="completion-review-heading">今日完成评价 <em>· ${resultConfig.label}</em></span>
+        <span class="completion-review-content">${escapeHtml(review.content)}</span>
+      </span>
+    </button>`;
+}
+
+function renderCompletionReviewAction(item, { subtask = false } = {}) {
+  if (isTomorrowView()) return '';
+  const today = getLocalDateKey();
+  const review = getCompletionReviewForDate(item, today);
+  const resultConfig = review ? getCompletionReviewResultConfig(review.result) : null;
+  const classes = subtask
+    ? `subtask-review-btn ${resultConfig?.className || ''}`
+    : `action-btn completion-review-action ${resultConfig?.className || ''}`;
+  const title = review ? `完成评价：${resultConfig.label}` : '完成评价';
+  const ariaLabel = review
+    ? `编辑“${item.text}”的今日完成评价：${resultConfig.label}`
+    : `填写“${item.text}”的今日完成评价`;
+  return `
+    <button class="${classes}" type="button" data-action="open-completion-review" data-id="${item.id}" data-review-date="${today}" ${review ? `data-review-id="${review.id}"` : ''} title="${title}" aria-label="${escapeHtml(ariaLabel)}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 9h8M8 13h5"/><path d="m13 17 2 2 4-5"/></svg>
+    </button>`;
+}
+
 function renderSubtaskHtml(todo, subtask) {
   return `
     <li class="subtask-item ${subtask.done ? 'done' : ''}" data-todo-id="${todo.id}" data-id="${subtask.id}" draggable="true">
@@ -1977,6 +2092,7 @@ function renderSubtaskHtml(todo, subtask) {
         <div class="subtask-body">
           <div class="subtask-actions">
             ${renderCompletionGoalAction(subtask, { subtask: true })}
+            ${renderCompletionReviewAction(subtask, { subtask: true })}
             ${renderDatePlanButton(subtask, { subtask: true })}
             <button class="subtask-desc-btn ${subtask.description ? 'has-desc' : ''}" type="button" data-action="toggle-desc" data-todo-id="${todo.id}" data-sub-id="${subtask.id}" title="详情描述" aria-label="详情描述">
               <svg class="desc-icon" viewBox="0 0 16 16" width="12" height="12" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
@@ -1990,6 +2106,7 @@ function renderSubtaskHtml(todo, subtask) {
           </div>
           <span class="subtask-text">${escapeHtml(subtask.text)}</span>
           ${renderCompletionGoalBlock(subtask)}
+          ${renderCompletionReviewBlock(subtask)}
           <div class="subtask-time">${renderSubtaskTimeContentHtml(subtask)}</div>
         </div>
       </div>
@@ -2084,6 +2201,7 @@ function renderTodoHtml(t, { todayCompact = false } = {}) {
         <div class="todo-body">
           <div class="todo-text">${escapeHtml(t.text)}</div>
           ${renderCompletionGoalBlock(t)}
+          ${renderCompletionReviewBlock(t)}
           <div class="task-meta">${categoryBadgeHtml}<div class="task-time"><span class="task-time-label">创建于 ${formatTime(t.createdAt)}${t.done && t.completedAt ? ' · 完成于 ' + formatTime(t.completedAt) : ''}</span>${(todayCompact || t.collapsed) && subtaskCount > 0 ? `<span class="task-progress-meta ${doneCount === subtaskCount ? 'is-complete' : ''}" aria-label="子任务完成情况：${doneCount}/${subtaskCount}">子任务 ${doneCount}/${subtaskCount}</span>` : ''}</div></div>
           ${t.description || openDescriptions.has(t.id) ? `<div class="desc-section" data-id="${t.id}" style="display: ${openDescriptions.has(t.id) ? 'block' : 'none'};">
             <div class="desc-display">${t.description ? escapeHtml(t.description) : ''}</div>
@@ -2092,6 +2210,7 @@ function renderTodoHtml(t, { todayCompact = false } = {}) {
         ${!todayCompact && subtaskCount > 0 ? renderCollapseToggleHtml(t) : ''}
         <div class="todo-actions">
           ${renderCompletionGoalAction(t)}
+          ${renderCompletionReviewAction(t)}
           ${renderDatePlanButton(t)}
           ${todayCompact ? '' : `<button class="action-btn sub-add-action" type="button" data-action="show-sub-add" data-todo-id="${t.id}" title="添加子任务" aria-label="添加子任务" aria-controls="sub-add-${t.id}" aria-expanded="false">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
@@ -2129,6 +2248,7 @@ function renderTodaySubtaskHtml(todo, subtask) {
           <span class="today-item-kind">子任务</span>
           <div class="subtask-text">${escapeHtml(subtask.text)}</div>
           ${renderCompletionGoalBlock(subtask)}
+          ${renderCompletionReviewBlock(subtask)}
           <div class="today-item-source">
             <span>${escapeHtml(todo.text)}</span>
             <span aria-hidden="true">·</span>
@@ -2137,6 +2257,7 @@ function renderTodaySubtaskHtml(todo, subtask) {
         </div>
         <div class="today-child-actions">
           ${renderCompletionGoalAction(subtask, { subtask: true })}
+          ${renderCompletionReviewAction(subtask, { subtask: true })}
           ${renderDatePlanButton(subtask, { subtask: true })}
           <button class="subtask-desc-btn ${subtask.description ? 'has-desc' : ''}" type="button" data-action="toggle-desc" data-todo-id="${todo.id}" data-sub-id="${subtask.id}" title="详情描述" aria-label="详情描述">
             <svg class="desc-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v7a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 11.5v-7z"/><path d="M5.5 6.5h5M5.5 9h3.5"/></svg>
@@ -2628,6 +2749,239 @@ async function deleteCompletionGoal(goalId = completionGoalEditingId) {
     completionGoalStatus.textContent = error?.message || '删除失败，请稍后重试';
   } finally {
     deleteCompletionGoalBtn.disabled = false;
+  }
+}
+
+function getActiveCompletionReviewItem() {
+  return completionReviewTodoId ? findTodoItem(completionReviewTodoId)?.item || null : null;
+}
+
+function getEditingCompletionReview() {
+  return getActiveCompletionReviewItem()?.completionReviews?.find(
+    review => review.id === completionReviewEditingId
+  ) || null;
+}
+
+function getSelectedCompletionReviewResult() {
+  return completionReviewForm.elements.completionReviewResult.value || '';
+}
+
+function setSelectedCompletionReviewResult(result = '') {
+  completionReviewForm.querySelectorAll('input[name="completionReviewResult"]').forEach(input => {
+    input.checked = input.value === result;
+  });
+}
+
+function updateCompletionReviewContentCount() {
+  completionReviewContentCount.textContent = `${completionReviewContent.value.length}/500`;
+}
+
+function renderCompletionReviewGoalReference() {
+  const item = getActiveCompletionReviewItem();
+  if (!item) return;
+  const goal = getCompletionGoalForDate(item, completionReviewDate.value);
+  completionReviewGoalContent.textContent = goal?.content
+    || '当天未设完成目标，可以直接记录实际完成情况。';
+  completionReviewGoalContent.classList.toggle('is-missing', !goal);
+}
+
+function renderCompletionReviewHistory() {
+  const item = getActiveCompletionReviewItem();
+  if (!item) return;
+  const reviews = sortCompletionReviews(item.completionReviews);
+  completionReviewHistoryLabel.textContent = `历史评价 ${reviews.length}`;
+  const visibleReviews = reviews.slice(0, completionReviewHistoryLimit);
+  completionReviewHistory.innerHTML = visibleReviews.length === 0
+    ? '<p class="completion-history-empty">还没有历史评价。保存后会按日期积累在这里。</p>'
+    : `${visibleReviews.map(review => {
+        const resultConfig = getCompletionReviewResultConfig(review.result);
+        const snapshot = review.goalContentSnapshot || '无目标记录';
+        return `
+          <div class="completion-review-history-item ${review.id === completionReviewEditingId ? 'is-current' : ''}">
+            <button type="button" data-review-history-id="${review.id}" aria-label="编辑 ${formatGoalDate(review.reviewDate)} 的完成评价">
+              <span class="completion-review-history-heading"><b>${formatGoalDate(review.reviewDate)}</b><strong class="${resultConfig.className}">${resultConfig.label}</strong>${review.id === completionReviewEditingId ? '<em>当前</em>' : ''}</span>
+              <p>${escapeHtml(review.content)}</p>
+              <small>当时目标：${escapeHtml(snapshot)}</small>
+            </button>
+            <button class="completion-history-delete" type="button" data-delete-review-id="${review.id}" title="删除" aria-label="删除 ${formatGoalDate(review.reviewDate)} 的完成评价">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          </div>`;
+      }).join('')}
+      ${reviews.length > visibleReviews.length ? '<button class="completion-history-more" type="button" data-review-history-more>查看更多</button>' : ''}`;
+}
+
+function syncCompletionReviewFormForDate({ preferredReviewId = null, preserveContent = false } = {}) {
+  const item = getActiveCompletionReviewItem();
+  if (!item) return;
+  const existing = preferredReviewId
+    ? item.completionReviews.find(review => review.id === preferredReviewId)
+    : getCompletionReviewForDate(item, completionReviewDate.value);
+  completionReviewEditingId = existing?.id || null;
+
+  if (existing && !preserveContent) {
+    completionReviewDate.value = existing.reviewDate;
+    setSelectedCompletionReviewResult(existing.result);
+    completionReviewContent.value = existing.content;
+  } else if (!existing && !preserveContent) {
+    setSelectedCompletionReviewResult();
+    completionReviewContent.value = '';
+  }
+
+  deleteCompletionReviewBtn.hidden = !existing;
+  renderCompletionReviewGoalReference();
+  renderCompletionReviewHistory();
+  updateCompletionReviewContentCount();
+}
+
+function openCompletionReviewDialog(todoId, { reviewDate = null, reviewId = null, returnFocus = null } = {}) {
+  const state = findTodoItem(todoId);
+  if (!state) return;
+  const today = getLocalDateKey();
+  const requestedDate = reviewDate || today;
+  completionReviewTodoId = todoId;
+  completionReviewReturnFocus = returnFocus || document.activeElement;
+  completionReviewHistoryLimit = 5;
+  completionReviewTask.textContent = state.item.text;
+  completionReviewStatus.textContent = '';
+  completionReviewHistoryToggle.setAttribute('aria-expanded', 'false');
+  completionReviewHistory.hidden = true;
+  completionReviewDate.max = today;
+  completionReviewDate.value = requestedDate > today ? today : requestedDate;
+  syncCompletionReviewFormForDate({ preferredReviewId: reviewId });
+  if (!completionReviewDialog.open) completionReviewDialog.showModal();
+  requestAnimationFrame(() => {
+    if (completionReviewEditingId) completionReviewContent.focus();
+    else completionReviewForm.querySelector('input[name="completionReviewResult"]')?.focus();
+  });
+}
+
+function resetCompletionReviewDialog() {
+  const returnTodoId = completionReviewTodoId;
+  completionReviewTodoId = null;
+  completionReviewEditingId = null;
+  completionReviewHistoryLimit = 5;
+  completionReviewStatus.textContent = '';
+  completionReviewContent.value = '';
+  setSelectedCompletionReviewResult();
+  updateCompletionReviewContentCount();
+  const returnFocus = completionReviewReturnFocus;
+  completionReviewReturnFocus = null;
+  if (returnFocus?.isConnected) returnFocus.focus();
+  else if (returnTodoId) {
+    requestAnimationFrame(() => {
+      list.querySelector(`[data-action="open-completion-review"][data-id="${returnTodoId}"]`)?.focus();
+    });
+  }
+}
+
+async function saveCompletionReview(event) {
+  event.preventDefault();
+  const item = getActiveCompletionReviewItem();
+  const reviewDate = completionReviewDate.value;
+  const result = getSelectedCompletionReviewResult();
+  const content = completionReviewContent.value.trim();
+  const today = getLocalDateKey();
+
+  if (!item || !reviewDate) return;
+  if (reviewDate > today) {
+    completionReviewStatus.textContent = '不能提前评价未来日期。';
+    completionReviewDate.focus();
+    return;
+  }
+  if (!result) {
+    completionReviewStatus.textContent = '请选择达成结果。';
+    completionReviewForm.querySelector('input[name="completionReviewResult"]')?.focus();
+    return;
+  }
+  if (!content) {
+    completionReviewStatus.textContent = '请填写实际完成情况。';
+    completionReviewContent.focus();
+    return;
+  }
+
+  const editingReview = getEditingCompletionReview();
+  const conflictingReview = item.completionReviews.find(review => (
+    review.reviewDate === reviewDate && review.id !== editingReview?.id
+  ));
+  if (conflictingReview && !window.confirm(`${formatGoalDate(reviewDate)}已有完成评价，是否用当前内容替换？`)) return;
+
+  const dateChanged = Boolean(editingReview && editingReview.reviewDate !== reviewDate);
+  const exactGoal = getCompletionGoalForDate(item, reviewDate);
+  const goalContentSnapshot = dateChanged || !editingReview
+    ? exactGoal?.content || null
+    : editingReview.goalContentSnapshot;
+
+  saveCompletionReviewBtn.disabled = true;
+  deleteCompletionReviewBtn.disabled = true;
+  completionReviewDialog.setAttribute('aria-busy', 'true');
+  completionReviewStatus.textContent = '正在保存…';
+  try {
+    let saved;
+    if (conflictingReview) {
+      saved = await updateCompletionReviewRecord(conflictingReview.id, {
+        result,
+        content,
+        goalContentSnapshot: exactGoal?.content || null,
+      });
+      if (editingReview) {
+        await deleteCompletionReviewRecord(editingReview.id);
+        removeCompletionReviewFromMemory(editingReview.id, item.id);
+      }
+    } else if (editingReview) {
+      saved = await updateCompletionReviewRecord(editingReview.id, {
+        reviewDate,
+        result,
+        content,
+        goalContentSnapshot,
+      });
+    } else {
+      saved = await createCompletionReviewRecord({
+        todoId: item.id,
+        reviewDate,
+        result,
+        content,
+        goalContentSnapshot,
+      });
+    }
+    upsertCompletionReviewInMemory(saved);
+    completionReviewEditingId = saved.id;
+    render();
+    showToast(`已保存 ${formatGoalDate(saved.reviewDate)} 的完成评价`);
+    completionReviewDialog.close();
+  } catch (error) {
+    completionReviewStatus.textContent = error?.message || '保存失败，请稍后重试';
+  } finally {
+    saveCompletionReviewBtn.disabled = false;
+    deleteCompletionReviewBtn.disabled = false;
+    completionReviewDialog.removeAttribute('aria-busy');
+  }
+}
+
+async function deleteCompletionReview(reviewId = completionReviewEditingId) {
+  const item = getActiveCompletionReviewItem();
+  const review = item?.completionReviews?.find(entry => entry.id === reviewId);
+  if (!item || !review) return;
+  if (!window.confirm(`删除 ${formatGoalDate(review.reviewDate)} 的完成评价？此操作无法撤销。`)) return;
+
+  deleteCompletionReviewBtn.disabled = true;
+  completionReviewStatus.textContent = '正在删除…';
+  try {
+    await deleteCompletionReviewRecord(review.id);
+    removeCompletionReviewFromMemory(review.id, item.id);
+    if (completionReviewEditingId === review.id) {
+      completionReviewEditingId = null;
+      syncCompletionReviewFormForDate();
+    } else {
+      renderCompletionReviewHistory();
+    }
+    completionReviewStatus.textContent = '';
+    render();
+    showToast('已删除完成评价');
+  } catch (error) {
+    completionReviewStatus.textContent = error?.message || '删除失败，请稍后重试';
+  } finally {
+    deleteCompletionReviewBtn.disabled = false;
   }
 }
 
@@ -3211,6 +3565,14 @@ list.addEventListener('click', (e) => {
       goalId: actionEl.dataset.goalId || null,
       returnFocus: actionEl,
     });
+  } else if (action === 'open-completion-review') {
+    e.preventDefault();
+    e.stopPropagation();
+    openCompletionReviewDialog(actionEl.dataset.id, {
+      reviewDate: actionEl.dataset.reviewDate,
+      reviewId: actionEl.dataset.reviewId || null,
+      returnFocus: actionEl,
+    });
   } else if (action === 'toggle-sub') {
     e.preventDefault();
     e.stopPropagation();
@@ -3616,6 +3978,46 @@ completionGoalHistory.addEventListener('click', event => {
   completionGoalContent.focus();
 });
 completionGoalDialog.addEventListener('close', resetCompletionGoalDialog);
+completionReviewForm.addEventListener('submit', saveCompletionReview);
+completionReviewDate.addEventListener('change', () => {
+  const editingReview = getEditingCompletionReview();
+  const isChangingEditingDate = editingReview && editingReview.reviewDate !== completionReviewDate.value;
+  syncCompletionReviewFormForDate({
+    preferredReviewId: isChangingEditingDate ? editingReview.id : null,
+    preserveContent: Boolean(isChangingEditingDate),
+  });
+});
+completionReviewContent.addEventListener('input', updateCompletionReviewContentCount);
+deleteCompletionReviewBtn.addEventListener('click', () => void deleteCompletionReview());
+document.getElementById('editCompletionReviewGoalBtn').addEventListener('click', () => {
+  const todoId = completionReviewTodoId;
+  const targetDate = completionReviewDate.value;
+  const returnFocus = completionReviewReturnFocus;
+  completionReviewDialog.close();
+  requestAnimationFrame(() => openCompletionGoalDialog(todoId, { targetDate, returnFocus }));
+});
+completionReviewHistoryToggle.addEventListener('click', () => {
+  const expanded = completionReviewHistory.hidden;
+  completionReviewHistory.hidden = !expanded;
+  completionReviewHistoryToggle.setAttribute('aria-expanded', String(expanded));
+});
+completionReviewHistory.addEventListener('click', event => {
+  const deleteButton = event.target.closest('[data-delete-review-id]');
+  if (deleteButton) {
+    void deleteCompletionReview(deleteButton.dataset.deleteReviewId);
+    return;
+  }
+  if (event.target.closest('[data-review-history-more]')) {
+    completionReviewHistoryLimit += 5;
+    renderCompletionReviewHistory();
+    return;
+  }
+  const historyButton = event.target.closest('[data-review-history-id]');
+  if (!historyButton) return;
+  syncCompletionReviewFormForDate({ preferredReviewId: historyButton.dataset.reviewHistoryId });
+  completionReviewContent.focus();
+});
+completionReviewDialog.addEventListener('close', resetCompletionReviewDialog);
 document.querySelectorAll('[data-dialog-close]').forEach(button => {
   button.addEventListener('click', () => closeDialog(button.dataset.dialogClose));
 });
@@ -3740,6 +4142,16 @@ function scheduleRealtimeRefresh() {
             historyExpanded: !completionGoalHistory.hidden,
           }
         : null;
+      const reviewDialogState = completionReviewDialog.open && completionReviewTodoId
+        ? {
+            todoId: completionReviewTodoId,
+            reviewDate: completionReviewDate.value,
+            reviewId: completionReviewEditingId,
+            result: getSelectedCompletionReviewResult(),
+            content: completionReviewContent.value,
+            historyExpanded: !completionReviewHistory.hidden,
+          }
+        : null;
       await Promise.all([loadCategories(), loadTodos()]);
       if (activeUserId !== expectedUserId) return;
       openDescriptions = loadOpenDescriptions(todos);
@@ -3749,6 +4161,15 @@ function scheduleRealtimeRefresh() {
         syncCompletionGoalFormForDate({ preferredGoalId: dialogState.goalId });
         completionGoalHistory.hidden = !dialogState.historyExpanded;
         completionGoalHistoryToggle.setAttribute('aria-expanded', String(dialogState.historyExpanded));
+      }
+      if (reviewDialogState && findTodoItem(reviewDialogState.todoId)) {
+        completionReviewDate.value = reviewDialogState.reviewDate;
+        syncCompletionReviewFormForDate({ preferredReviewId: reviewDialogState.reviewId });
+        setSelectedCompletionReviewResult(reviewDialogState.result);
+        completionReviewContent.value = reviewDialogState.content;
+        updateCompletionReviewContentCount();
+        completionReviewHistory.hidden = !reviewDialogState.historyExpanded;
+        completionReviewHistoryToggle.setAttribute('aria-expanded', String(reviewDialogState.historyExpanded));
       }
     } catch (error) {
       console.error('实时同步刷新失败:', error);
@@ -3792,10 +4213,11 @@ async function startTodoApp(user) {
     restoreExpandedCompletedSubtasks(user.id);
     openDescriptions = loadOpenDescriptions(todos);
     render();
-    [todoChannel, categoryChannel, completionGoalChannel] = await Promise.all([
+    [todoChannel, categoryChannel, completionGoalChannel, completionReviewChannel] = await Promise.all([
       subscribeTodoChanges(user.id, handleRealtimeTodoChange),
       subscribeCategoryChanges(user.id, scheduleRealtimeRefresh),
       subscribeCompletionGoalChanges(user.id, scheduleRealtimeRefresh),
+      subscribeCompletionReviewChanges(user.id, scheduleRealtimeRefresh),
     ]);
   } catch (error) {
     if (sessionVersion !== appSessionVersion) return;
@@ -3809,6 +4231,7 @@ function stopTodoApp() {
   closeCategoryContextMenu();
   closeDatePlanMenu();
   if (completionGoalDialog.open) completionGoalDialog.close();
+  if (completionReviewDialog.open) completionReviewDialog.close();
   if (deleteCategoryDialog.open) deleteCategoryDialog.close();
   activeUserId = null;
   clearTimeout(realtimeRefreshTimer);
@@ -3822,9 +4245,11 @@ function stopTodoApp() {
   unsubscribeTodoChanges(todoChannel);
   unsubscribeCategoryChanges(categoryChannel);
   unsubscribeCompletionGoalChanges(completionGoalChannel);
+  unsubscribeCompletionReviewChanges(completionReviewChannel);
   todoChannel = null;
   categoryChannel = null;
   completionGoalChannel = null;
+  completionReviewChannel = null;
   setCurrentUser(null);
   openDescriptions = new Set();
   expandedCategoryIds = new Set();
@@ -3842,5 +4267,6 @@ window.addEventListener('beforeunload', () => {
   unsubscribeTodoChanges(todoChannel);
   unsubscribeCategoryChanges(categoryChannel);
   unsubscribeCompletionGoalChanges(completionGoalChannel);
+  unsubscribeCompletionReviewChanges(completionReviewChannel);
 });
 initAppShell();

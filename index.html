@@ -415,6 +415,48 @@
       </form>
     </dialog>
 
+    <dialog class="app-dialog completion-review-dialog" id="completionReviewDialog">
+      <form id="completionReviewForm">
+        <div class="dialog-heading">
+          <div><span>计划对照</span><h2>每日复盘</h2></div>
+          <button type="button" data-dialog-close="completionReviewDialog" title="关闭" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+        </div>
+        <p class="completion-review-task" id="completionReviewTask"></p>
+        <label for="completionReviewDate">评价日期</label>
+        <input id="completionReviewDate" type="date" required>
+        <section class="completion-review-goal-reference" aria-labelledby="completionReviewGoalLabel">
+          <div>
+            <span id="completionReviewGoalLabel">当天完成目标</span>
+            <button id="editCompletionReviewGoalBtn" type="button">编辑当天目标</button>
+          </div>
+          <p id="completionReviewGoalContent"></p>
+        </section>
+        <fieldset class="completion-review-result">
+          <legend>达成结果</legend>
+          <div class="completion-review-result-options">
+            <label class="is-achieved"><input type="radio" name="completionReviewResult" value="achieved" required><span>已达成</span></label>
+            <label class="is-partial"><input type="radio" name="completionReviewResult" value="partial"><span>部分达成</span></label>
+            <label class="is-missed"><input type="radio" name="completionReviewResult" value="missed"><span>未达成</span></label>
+          </div>
+        </fieldset>
+        <label for="completionReviewContent">实际完成情况</label>
+        <textarea id="completionReviewContent" maxlength="500" required placeholder="写下实际做到了什么，以及还剩下什么"></textarea>
+        <div class="completion-review-content-meta"><span>用事实记录结果，不影响任务完成状态</span><b id="completionReviewContentCount">0/500</b></div>
+        <button class="completion-history-toggle" id="completionReviewHistoryToggle" type="button" aria-expanded="false" aria-controls="completionReviewHistory">
+          <svg viewBox="0 0 12 12" aria-hidden="true"><polyline points="2,3 6,8 10,3" /></svg>
+          <span id="completionReviewHistoryLabel">历史评价 0</span>
+        </button>
+        <div class="completion-review-history" id="completionReviewHistory" hidden></div>
+        <p class="completion-review-status" id="completionReviewStatus" role="status" aria-live="polite"></p>
+        <div class="dialog-actions completion-review-actions">
+          <button class="dialog-danger" id="deleteCompletionReviewBtn" type="button" hidden>删除这条</button>
+          <span></span>
+          <button class="dialog-secondary" type="button" data-dialog-close="completionReviewDialog">取消</button>
+          <button class="dialog-primary" id="saveCompletionReviewBtn" type="submit">保存评价</button>
+        </div>
+      </form>
+    </dialog>
+
     <div class="app-toast" id="appToast" role="status" aria-live="polite" hidden>
       <span id="appToastText"></span>
       <button id="undoMoveBtn" type="button" hidden>撤销</button>
