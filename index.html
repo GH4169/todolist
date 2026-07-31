@@ -436,11 +436,11 @@
           <div class="completion-review-result-options">
             <label class="is-achieved"><input type="radio" name="completionReviewResult" value="achieved" required><span>已达成</span></label>
             <label class="is-partial"><input type="radio" name="completionReviewResult" value="partial"><span>部分达成</span></label>
-            <label class="is-missed"><input type="radio" name="completionReviewResult" value="missed"><span>未达成</span></label>
+            <label class="is-missed"><input type="radio" name="completionReviewResult" value="missed"><span>未推进</span></label>
           </div>
         </fieldset>
-        <label for="completionReviewContent">实际完成情况</label>
-        <textarea id="completionReviewContent" maxlength="500" required placeholder="写下实际做到了什么，以及还剩下什么"></textarea>
+        <label for="completionReviewContent">实际完成情况 <span id="completionReviewContentOptional" hidden>（可选）</span></label>
+        <textarea id="completionReviewContent" maxlength="500" placeholder="写下实际做到了什么，以及还剩下什么"></textarea>
         <div class="completion-review-content-meta"><span>用事实记录结果，不影响任务完成状态</span><b id="completionReviewContentCount">0/500</b></div>
         <button class="completion-history-toggle" id="completionReviewHistoryToggle" type="button" aria-expanded="false" aria-controls="completionReviewHistory">
           <svg viewBox="0 0 12 12" aria-hidden="true"><polyline points="2,3 6,8 10,3" /></svg>

@@ -72,6 +72,7 @@ const completionReviewTask = document.getElementById('completionReviewTask');
 const completionReviewDate = document.getElementById('completionReviewDate');
 const completionReviewGoalContent = document.getElementById('completionReviewGoalContent');
 const completionReviewContent = document.getElementById('completionReviewContent');
+const completionReviewContentOptional = document.getElementById('completionReviewContentOptional');
 const completionReviewContentCount = document.getElementById('completionReviewContentCount');
 const completionReviewHistoryToggle = document.getElementById('completionReviewHistoryToggle');
 const completionReviewHistoryLabel = document.getElementById('completionReviewHistoryLabel');
@@ -137,7 +138,7 @@ let completionReviewHistoryLimit = 5;
 const COMPLETION_REVIEW_RESULTS = {
   achieved: { label: '已达成', className: 'is-achieved' },
   partial: { label: '部分达成', className: 'is-partial' },
-  missed: { label: '未达成', className: 'is-missed' },
+  missed: { label: '未推进', className: 'is-missed' },
 };
 
 // ---- 激励语池 ----
@@ -2053,12 +2054,13 @@ function renderCompletionReviewBlock(item) {
   }
 
   const resultConfig = getCompletionReviewResultConfig(review.result);
+  const reviewContent = review.content || '已按目标完成';
   return `
     <button class="completion-review-block ${resultConfig.className}" type="button" data-action="open-completion-review" data-id="${item.id}" data-review-date="${today}" data-review-id="${review.id}" aria-label="编辑“${escapeHtml(item.text)}”的今日完成评价：${resultConfig.label}">
       <span class="completion-review-mark" aria-hidden="true">✓</span>
       <span class="completion-review-copy">
         <span class="completion-review-heading">今日完成评价 <em>· ${resultConfig.label}</em></span>
-        <span class="completion-review-content">${escapeHtml(review.content)}</span>
+        <span class="completion-review-content">${escapeHtml(reviewContent)}</span>
       </span>
     </button>`;
 }
@@ -2776,6 +2778,25 @@ function updateCompletionReviewContentCount() {
   completionReviewContentCount.textContent = `${completionReviewContent.value.length}/500`;
 }
 
+function getCompletionReviewDraftContext() {
+  const item = getActiveCompletionReviewItem();
+  const reviewDate = completionReviewDate.value;
+  const editingReview = getEditingCompletionReview();
+  const dateChanged = Boolean(editingReview && editingReview.reviewDate !== reviewDate);
+  const exactGoal = item && reviewDate ? getCompletionGoalForDate(item, reviewDate) : null;
+  const goalContentSnapshot = dateChanged || !editingReview
+    ? exactGoal?.content || null
+    : editingReview.goalContentSnapshot;
+  return { item, editingReview, exactGoal, goalContentSnapshot };
+}
+
+function syncCompletionReviewContentRequirement() {
+  const { goalContentSnapshot } = getCompletionReviewDraftContext();
+  const optional = getSelectedCompletionReviewResult() === 'achieved' && Boolean(goalContentSnapshot);
+  completionReviewContent.required = !optional;
+  completionReviewContentOptional.hidden = !optional;
+}
+
 function renderCompletionReviewGoalReference() {
   const item = getActiveCompletionReviewItem();
   if (!item) return;
@@ -2800,7 +2821,7 @@ function renderCompletionReviewHistory() {
           <div class="completion-review-history-item ${review.id === completionReviewEditingId ? 'is-current' : ''}">
             <button type="button" data-review-history-id="${review.id}" aria-label="编辑 ${formatGoalDate(review.reviewDate)} 的完成评价">
               <span class="completion-review-history-heading"><b>${formatGoalDate(review.reviewDate)}</b><strong class="${resultConfig.className}">${resultConfig.label}</strong>${review.id === completionReviewEditingId ? '<em>当前</em>' : ''}</span>
-              <p>${escapeHtml(review.content)}</p>
+              <p>${escapeHtml(review.content || '已按目标完成')}</p>
               <small>当时目标：${escapeHtml(snapshot)}</small>
             </button>
             <button class="completion-history-delete" type="button" data-delete-review-id="${review.id}" title="删除" aria-label="删除 ${formatGoalDate(review.reviewDate)} 的完成评价">
@@ -2832,6 +2853,7 @@ function syncCompletionReviewFormForDate({ preferredReviewId = null, preserveCon
   renderCompletionReviewGoalReference();
   renderCompletionReviewHistory();
   updateCompletionReviewContentCount();
+  syncCompletionReviewContentRequirement();
 }
 
 function openCompletionReviewDialog(todoId, { reviewDate = null, reviewId = null, returnFocus = null } = {}) {
@@ -2877,11 +2899,16 @@ function resetCompletionReviewDialog() {
 
 async function saveCompletionReview(event) {
   event.preventDefault();
-  const item = getActiveCompletionReviewItem();
   const reviewDate = completionReviewDate.value;
   const result = getSelectedCompletionReviewResult();
   const content = completionReviewContent.value.trim();
   const today = getLocalDateKey();
+  const {
+    item,
+    editingReview,
+    exactGoal,
+    goalContentSnapshot,
+  } = getCompletionReviewDraftContext();
 
   if (!item || !reviewDate) return;
   if (reviewDate > today) {
@@ -2894,23 +2921,16 @@ async function saveCompletionReview(event) {
     completionReviewForm.querySelector('input[name="completionReviewResult"]')?.focus();
     return;
   }
-  if (!content) {
+  if (!content && !(result === 'achieved' && goalContentSnapshot)) {
     completionReviewStatus.textContent = '请填写实际完成情况。';
     completionReviewContent.focus();
     return;
   }
 
-  const editingReview = getEditingCompletionReview();
   const conflictingReview = item.completionReviews.find(review => (
     review.reviewDate === reviewDate && review.id !== editingReview?.id
   ));
   if (conflictingReview && !window.confirm(`${formatGoalDate(reviewDate)}已有完成评价，是否用当前内容替换？`)) return;
-
-  const dateChanged = Boolean(editingReview && editingReview.reviewDate !== reviewDate);
-  const exactGoal = getCompletionGoalForDate(item, reviewDate);
-  const goalContentSnapshot = dateChanged || !editingReview
-    ? exactGoal?.content || null
-    : editingReview.goalContentSnapshot;
 
   saveCompletionReviewBtn.disabled = true;
   deleteCompletionReviewBtn.disabled = true;
@@ -4001,6 +4021,9 @@ completionGoalHistory.addEventListener('click', event => {
 completionGoalDialog.addEventListener('close', resetCompletionGoalDialog);
 completionReviewForm.addEventListener('submit', saveCompletionReview);
 submitTextareaOnEnter(completionReviewContent, completionReviewForm, saveCompletionReviewBtn);
+completionReviewForm.addEventListener('change', event => {
+  if (event.target.name === 'completionReviewResult') syncCompletionReviewContentRequirement();
+});
 completionReviewDate.addEventListener('change', () => {
   const editingReview = getEditingCompletionReview();
   const isChangingEditingDate = editingReview && editingReview.reviewDate !== completionReviewDate.value;

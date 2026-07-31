@@ -57,8 +57,6 @@ create table if not exists public.todo_completion_reviews (
   updated_at timestamptz not null default now(),
   constraint todo_completion_reviews_result_check
     check (result in ('achieved', 'partial', 'missed')),
-  constraint todo_completion_reviews_content_check
-    check (length(trim(content)) between 1 and 500),
   constraint todo_completion_reviews_goal_snapshot_check check (
     goal_content_snapshot is null
     or length(trim(goal_content_snapshot)) between 1 and 500
@@ -119,6 +117,19 @@ alter table public.todo_completion_reviews add column if not exists goal_content
 alter table public.todo_completion_reviews add column if not exists created_at timestamptz not null default now();
 alter table public.todo_completion_reviews add column if not exists updated_at timestamptz not null default now();
 
+-- 已达成且保留了目标快照时，结构化结果本身足以形成一条可解释记录。
+alter table public.todo_completion_reviews
+  drop constraint if exists todo_completion_reviews_content_check;
+alter table public.todo_completion_reviews
+  add constraint todo_completion_reviews_content_check check (
+    length(trim(content)) between 1 and 500
+    or (
+      result = 'achieved'
+      and length(trim(content)) = 0
+      and goal_content_snapshot is not null
+    )
+  );
+
 do $$
 begin
   if not exists (
@@ -158,16 +169,6 @@ begin
     alter table public.todo_completion_reviews
       add constraint todo_completion_reviews_result_check
       check (result in ('achieved', 'partial', 'missed'));
-  end if;
-
-  if not exists (
-    select 1 from pg_constraint
-    where conname = 'todo_completion_reviews_content_check'
-      and conrelid = 'public.todo_completion_reviews'::regclass
-  ) then
-    alter table public.todo_completion_reviews
-      add constraint todo_completion_reviews_content_check
-      check (length(trim(content)) between 1 and 500);
   end if;
 
   if not exists (
