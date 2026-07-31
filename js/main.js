@@ -3938,7 +3938,28 @@ document.getElementById('categoryForm').addEventListener('submit', submitCategor
 document.getElementById('deleteCategoryForm').addEventListener('submit', submitDeleteCategory);
 document.getElementById('moveForm').addEventListener('submit', submitMoveForm);
 document.getElementById('bulkOrganizeForm').addEventListener('submit', submitBulkOrganize);
+function submitTextareaOnEnter(textarea, form, submitButton) {
+  textarea.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' || event.isComposing) return;
+    event.preventDefault();
+
+    if (event.ctrlKey) {
+      textarea.setRangeText(
+        '\n',
+        textarea.selectionStart,
+        textarea.selectionEnd,
+        'end'
+      );
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      return;
+    }
+
+    if (!submitButton.disabled) form.requestSubmit();
+  });
+}
+
 completionGoalForm.addEventListener('submit', saveCompletionGoal);
+submitTextareaOnEnter(completionGoalContent, completionGoalForm, saveCompletionGoalBtn);
 completionGoalDate.addEventListener('change', () => {
   const editingGoal = getEditingCompletionGoal();
   const isChangingEditingDate = editingGoal && editingGoal.targetDate !== completionGoalDate.value;
@@ -3979,6 +4000,7 @@ completionGoalHistory.addEventListener('click', event => {
 });
 completionGoalDialog.addEventListener('close', resetCompletionGoalDialog);
 completionReviewForm.addEventListener('submit', saveCompletionReview);
+submitTextareaOnEnter(completionReviewContent, completionReviewForm, saveCompletionReviewBtn);
 completionReviewDate.addEventListener('change', () => {
   const editingReview = getEditingCompletionReview();
   const isChangingEditingDate = editingReview && editingReview.reviewDate !== completionReviewDate.value;
