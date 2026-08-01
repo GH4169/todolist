@@ -23,6 +23,8 @@ const activeTaskCount = document.getElementById('activeTaskCount');
 const completedTaskCount = document.getElementById('completedTaskCount');
 const todayTaskCount = document.getElementById('todayTaskCount');
 const tomorrowTaskCount = document.getElementById('tomorrowTaskCount');
+const laterTaskCount = document.getElementById('laterTaskCount');
+const laterTasksNav = document.getElementById('laterTasksNav');
 const categoryList = document.getElementById('categoryList');
 const todayTasksNav = document.getElementById('todayTasksNav');
 const tomorrowTasksNav = document.getElementById('tomorrowTasksNav');
@@ -48,6 +50,14 @@ const showQuoteSetting = document.getElementById('showQuoteSetting');
 const showTaskTimesSetting = document.getElementById('showTaskTimesSetting');
 const categoryContextMenu = document.getElementById('categoryContextMenu');
 const datePlanMenu = document.getElementById('datePlanMenu');
+const plannedDateDialog = document.getElementById('plannedDateDialog');
+const plannedDateForm = document.getElementById('plannedDateForm');
+const plannedDateTask = document.getElementById('plannedDateTask');
+const plannedDateInput = document.getElementById('plannedDateInput');
+const plannedDateNote = document.getElementById('plannedDateNote');
+const savePlannedDateBtn = document.getElementById('savePlannedDateBtn');
+const composerPlannedDateRow = document.getElementById('composerPlannedDateRow');
+const composerPlannedDate = document.getElementById('composerPlannedDate');
 const deleteCategoryDialog = document.getElementById('deleteCategoryDialog');
 const todayCarryover = document.getElementById('todayCarryover');
 const todayCarryoverList = document.getElementById('todayCarryoverList');
@@ -93,6 +103,7 @@ const EXPANDED_CATEGORIES_STORAGE_PREFIX = 'geek-todos-expanded-categories:';
 const PLANNED_COMPOSER_CATEGORY_STORAGE_PREFIX = 'geek-todos-today-composer-category:';
 const TODAY_CATEGORY_ID = 'today';
 const TOMORROW_CATEGORY_ID = 'tomorrow';
+const LATER_CATEGORY_ID = 'later';
 const UNASSIGNED_CATEGORY_ID = 'unassigned';
 let activeCategoryId = TODAY_CATEGORY_ID;
 let plannedComposerCategoryId = null;
@@ -241,7 +252,7 @@ function loadExpandedCategories(userId) {
 }
 
 function isValidCategoryId(categoryId) {
-  if (categoryId === TODAY_CATEGORY_ID || categoryId === TOMORROW_CATEGORY_ID) return true;
+  if (categoryId === TODAY_CATEGORY_ID || categoryId === TOMORROW_CATEGORY_ID || categoryId === LATER_CATEGORY_ID) return true;
   if (categoryId === UNASSIGNED_CATEGORY_ID) return todos.some(todo => !todo.categoryId);
   return Boolean(getCategoryById(categoryId));
 }
@@ -621,9 +632,24 @@ function getPlannedViewConfig(categoryId = activeCategoryId, baseDate = new Date
       clearedTitle: '明日进行中已经清空',
       emptyHint: '给明天留下一件重要的事',
     },
+    [LATER_CATEGORY_ID]: {
+      title: '后续待办',
+      relativeLabel: '后续',
+      emptyTitle: '还没有后续安排',
+      clearedTitle: '后续进行中已经清空',
+      emptyHint: '通过任务日历按钮选择一个未来日期',
+      isRange: true,
+    },
   };
   const config = configs[categoryId];
   if (!config) return null;
+  if (config.isRange) {
+    return {
+      ...config,
+      categoryId,
+      tomorrowKey: getLocalDateKey(getRelativeLocalDate(1, baseDate)),
+    };
+  }
   const date = getRelativeLocalDate(config.offset, baseDate);
   return { ...config, categoryId, date, dateKey: getLocalDateKey(date) };
 }
@@ -649,7 +675,70 @@ function getTomorrowEntries() {
 }
 
 function getActivePlannedEntries() {
-  return getPlannedEntries(getPlannedViewConfig()?.dateKey);
+  const view = getPlannedViewConfig();
+  if (view?.isRange) return getLaterEntries();
+  return getPlannedEntries(view?.dateKey);
+}
+
+function getLaterEntries(baseDate = new Date()) {
+  const tomorrowKey = getLocalDateKey(getRelativeLocalDate(1, baseDate));
+  return getTaskEntries()
+    .filter(({ item }) => item.plannedDate && item.plannedDate > tomorrowKey)
+    .sort((a, b) => (
+      a.item.plannedDate.localeCompare(b.item.plannedDate)
+      || compareTodoOrder(a.item, b.item)
+    ));
+}
+
+function groupEntriesByPlannedDate(entries) {
+  const groups = new Map();
+  entries.forEach(entry => {
+    if (!entry.item.plannedDate) return;
+    if (!groups.has(entry.item.plannedDate)) groups.set(entry.item.plannedDate, []);
+    groups.get(entry.item.plannedDate).push(entry);
+  });
+  return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
+}
+
+function formatPlannedDateLabel(dateKey) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  return formatDateHeading(new Date(year, month - 1, day, 12));
+}
+
+function isSelectablePlannedDate(dateKey, todayKey = getLocalDateKey()) {
+  if (!dateKey || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return false;
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const date = new Date(year, month - 1, day, 12);
+  return date.getFullYear() === year
+    && date.getMonth() === month - 1
+    && date.getDate() === day
+    && dateKey >= todayKey;
+}
+
+function getPlannedDateToast(dateKey, baseDate = new Date()) {
+  const today = getLocalDateKey(baseDate);
+  const tomorrow = getLocalDateKey(getRelativeLocalDate(1, baseDate));
+  if (dateKey === today) return '已安排到今天';
+  if (dateKey === tomorrow) return '已安排到明天';
+  return `已安排到 ${formatGoalDate(dateKey)}`;
+}
+
+function getDatePlanFocusOrder(itemId) {
+  const buttons = [...list.querySelectorAll('[data-action="open-date-menu"]')];
+  const index = buttons.findIndex(button => button.dataset.id === itemId);
+  if (index === -1) return [];
+  return [...buttons.slice(index + 1), ...buttons.slice(0, index)]
+    .map(button => button.dataset.id);
+}
+
+function resolveDatePlanReturnFocus(itemId, fallbackIds = []) {
+  const ownButton = list.querySelector(`[data-action="open-date-menu"][data-id="${itemId}"]`);
+  if (ownButton) return ownButton;
+  for (const id of fallbackIds) {
+    const button = list.querySelector(`[data-action="open-date-menu"][data-id="${id}"]`);
+    if (button) return button;
+  }
+  return input;
 }
 
 function getCarryoverEntries() {
@@ -667,6 +756,10 @@ function isTomorrowView() {
   return activeCategoryId === TOMORROW_CATEGORY_ID;
 }
 
+function isLaterView() {
+  return activeCategoryId === LATER_CATEGORY_ID;
+}
+
 function isPlannedDateView() {
   return Boolean(getPlannedViewConfig());
 }
@@ -674,6 +767,10 @@ function isPlannedDateView() {
 function matchesCategory(todo, categoryId = activeCategoryId) {
   const plannedView = getPlannedViewConfig(categoryId);
   if (plannedView) {
+    if (plannedView.isRange) {
+      return todo.plannedDate > plannedView.tomorrowKey
+        || todo.subtasks.some(item => item.plannedDate > plannedView.tomorrowKey);
+    }
     return todo.plannedDate === plannedView.dateKey
       || todo.subtasks.some(item => item.plannedDate === plannedView.dateKey);
   }
@@ -717,7 +814,18 @@ function syncComposerCategory() {
   const isCrossCategoryView = isPlannedDateView();
   composerCategory.hidden = !isCrossCategoryView;
   composerGoalRow.hidden = !isCrossCategoryView;
+  composerPlannedDateRow.hidden = !isLaterView();
   if (isCrossCategoryView && !newTaskCategorySelect.value) newTaskCategorySelect.value = '';
+
+  if (isLaterView()) {
+    const todayKey = getLocalDateKey();
+    if (!isSelectablePlannedDate(composerPlannedDate.value, todayKey)) {
+      composerPlannedDate.value = getLocalDateKey(getRelativeLocalDate(2));
+    }
+    composerPlannedDate.min = todayKey;
+    completionGoalInputLabel.textContent = `${formatGoalDate(composerPlannedDate.value)}完成目标`;
+    completionGoalInput.placeholder = '这一天至少推进到哪里？（可选）';
+  }
 
   const targetName = isCrossCategoryView
     ? getCategoryName(newTaskCategorySelect.value || null)
@@ -726,7 +834,7 @@ function syncComposerCategory() {
   input.placeholder = plannedView
     ? `添加到「${targetName}」并安排${plannedView.relativeLabel}`
     : `添加到「${targetName}」`;
-  if (plannedView) {
+  if (plannedView && !plannedView.isRange) {
     const dayLabel = isTomorrowView() ? '明日' : '今日';
     completionGoalInputLabel.textContent = `${dayLabel}完成目标`;
     completionGoalInput.placeholder = `${plannedView.relativeLabel}至少推进到哪里？（可选）`;
@@ -736,6 +844,7 @@ function syncComposerCategory() {
 function setActiveCategory(categoryId) {
   const validId = categoryId === TODAY_CATEGORY_ID
     || categoryId === TOMORROW_CATEGORY_ID
+    || categoryId === LATER_CATEGORY_ID
     || categoryId === UNASSIGNED_CATEGORY_ID
     || Boolean(getCategoryById(categoryId));
   activeCategoryId = validId ? categoryId : TODAY_CATEGORY_ID;
@@ -829,8 +938,11 @@ function renderCategoryNavigation() {
   todayTasksNav.toggleAttribute('aria-current', activeCategoryId === TODAY_CATEGORY_ID);
   tomorrowTasksNav.classList.toggle('active', activeCategoryId === TOMORROW_CATEGORY_ID);
   tomorrowTasksNav.toggleAttribute('aria-current', activeCategoryId === TOMORROW_CATEGORY_ID);
+  laterTasksNav.classList.toggle('active', activeCategoryId === LATER_CATEGORY_ID);
+  laterTasksNav.toggleAttribute('aria-current', activeCategoryId === LATER_CATEGORY_ID);
   todayTaskCount.textContent = getTodayEntries().filter(({ item }) => !item.done).length;
   tomorrowTaskCount.textContent = getTomorrowEntries().filter(({ item }) => !item.done).length;
+  laterTaskCount.textContent = getLaterEntries().filter(({ item }) => !item.done).length;
   syncCategorySelects();
 }
 
@@ -1281,7 +1393,15 @@ async function addTodo() {
   const text = input.value.trim();
   if (!text) return;
   const plannedView = getPlannedViewConfig();
-  const goalContent = plannedView ? completionGoalInput.value.trim() : '';
+  const plannedDate = plannedView?.isRange
+    ? composerPlannedDate.value
+    : plannedView?.dateKey || null;
+  if (plannedView?.isRange && !isSelectablePlannedDate(plannedDate)) {
+    showToast('请选择今天或未来日期');
+    composerPlannedDate.focus();
+    return;
+  }
+  const goalContent = plannedView && plannedDate ? completionGoalInput.value.trim() : '';
   const categoryId = plannedView
     ? (newTaskCategorySelect.value || null)
     : (activeCategoryId === UNASSIGNED_CATEGORY_ID ? null : activeCategoryId);
@@ -1290,14 +1410,14 @@ async function addTodo() {
       text,
       categoryId,
       position: 0,
-      plannedDate: plannedView?.dateKey || null,
+      plannedDate,
     });
     rememberLocalCreate(todo.id);
     if (goalContent) {
       try {
         const goal = await upsertCompletionGoalForDate({
           todoId: todo.id,
-          targetDate: plannedView.dateKey,
+          targetDate: plannedDate,
           content: goalContent,
         });
         todo.completionGoals = [goal];
@@ -1309,6 +1429,7 @@ async function addTodo() {
     const affectedTodoIds = upsertTodoItem(todo);
     input.value = '';
     completionGoalInput.value = '';
+    if (plannedView?.isRange) composerPlannedDate.value = getLocalDateKey(getRelativeLocalDate(2));
     input.focus();
     renderChangedTodos(affectedTodoIds);
     await saveParentTodoPositions(updateTodoWithRealtimeEcho);
@@ -1317,35 +1438,46 @@ async function addTodo() {
   }
 }
 
-async function setTodoPlannedDate(id, plannedDate, { returnFocus = null } = {}) {
+async function setTodoPlannedDate(id, plannedDate, {
+  returnFocus = null,
+  promptForGoal = true,
+  focusFallbackIds = [],
+} = {}) {
   const state = findTodoItem(id);
-  if (!state) return;
+  if (!state) return false;
+  if (plannedDate && !isSelectablePlannedDate(plannedDate)) {
+    showToast('请选择今天或未来的有效日期');
+    return false;
+  }
 
   const previousPlannedDate = state.item.plannedDate;
-  if (previousPlannedDate === plannedDate) return;
+  if (previousPlannedDate === plannedDate) {
+    const nextFocus = resolveDatePlanReturnFocus(id, focusFallbackIds) || returnFocus;
+    if (nextFocus?.isConnected && !plannedDateDialog.open) requestAnimationFrame(() => nextFocus.focus());
+    return true;
+  }
   state.item.plannedDate = plannedDate;
   render();
 
   try {
     await updateTodoWithRealtimeEcho(id, { plannedDate });
-    const today = getPlannedViewConfig(TODAY_CATEGORY_ID).dateKey;
-    const tomorrow = getPlannedViewConfig(TOMORROW_CATEGORY_ID).dateKey;
-    const message = plannedDate === today
-      ? '已安排到今天'
-      : plannedDate === tomorrow
-        ? '已安排到明天'
-        : '已取消日期安排';
+    const message = plannedDate ? getPlannedDateToast(plannedDate) : '已取消日期安排';
     showToast(message);
-    if (plannedDate && !getCompletionGoalForDate(state.item, plannedDate)) {
+    const nextFocus = resolveDatePlanReturnFocus(id, focusFallbackIds);
+    if (promptForGoal && plannedDate && !getCompletionGoalForDate(state.item, plannedDate)) {
       openCompletionGoalDialog(id, {
         targetDate: plannedDate,
-        returnFocus,
+        returnFocus: nextFocus || returnFocus,
       });
+    } else if (nextFocus?.isConnected && !plannedDateDialog.open) {
+      requestAnimationFrame(() => nextFocus.focus());
     }
+    return true;
   } catch (error) {
     if (state.item.plannedDate === plannedDate) state.item.plannedDate = previousPlannedDate;
     render();
     showCloudError(error);
+    return false;
   }
 }
 
@@ -1969,19 +2101,22 @@ function renderDatePlanButton(item, { subtask = false } = {}) {
   const isToday = item.plannedDate === today;
   const isTomorrow = item.plannedDate === tomorrow;
   const isScheduled = Boolean(item.plannedDate);
+  const isOverdue = Boolean(item.plannedDate && item.plannedDate < today);
   const label = isToday
     ? '安排日期：今天'
     : isTomorrow
       ? '安排日期：明天'
       : isScheduled
-        ? `安排日期：${item.plannedDate}`
+        ? `安排日期：${formatGoalDate(item.plannedDate)}${isOverdue ? '，已过期' : ''}`
         : '安排日期';
   const stateIcon = isToday
     ? '<path class="today-check" d="m8.5 15 2 2 4-4"/>'
     : isTomorrow
       ? '<path class="tomorrow-arrow" d="M8 15h8M13 12l3 3-3 3"/>'
+      : isOverdue
+        ? '<path class="date-overdue" d="M12 13v3M12 18h.01"/>'
       : '<path class="date-plus" d="M12 13v6M9 16h6"/>';
-  const stateClass = isToday ? 'is-today' : isTomorrow ? 'is-tomorrow' : isScheduled ? 'is-scheduled' : '';
+  const stateClass = isToday ? 'is-today' : isTomorrow ? 'is-tomorrow' : isOverdue ? 'is-overdue' : isScheduled ? 'is-scheduled' : '';
   const classes = subtask
     ? `subtask-schedule-toggle ${stateClass}`
     : `action-btn schedule-toggle ${stateClass}`;
@@ -1992,14 +2127,16 @@ function renderDatePlanButton(item, { subtask = false } = {}) {
 }
 
 function renderCompletionGoalBlock(item, { plannedView = getPlannedViewConfig() } = {}) {
-  const contextDate = plannedView?.dateKey || null;
+  const contextDate = plannedView?.isRange ? item.plannedDate : plannedView?.dateKey || null;
   const projection = getGoalProjection(item, contextDate);
   if (!plannedView && !projection.goal) return '';
 
   const targetDate = projection.state === 'carried'
     ? contextDate
     : (projection.goal?.targetDate || contextDate || item.plannedDate || getLocalDateKey());
-  const relativeLabel = isTomorrowView() ? '明日' : '今日';
+  const relativeLabel = plannedView?.isRange
+    ? formatGoalDate(contextDate)
+    : isTomorrowView() ? '明日' : '今日';
   const label = projection.state === 'exact'
     ? `${relativeLabel}完成目标`
     : projection.state === 'carried'
@@ -2007,7 +2144,7 @@ function renderCompletionGoalBlock(item, { plannedView = getPlannedViewConfig() 
       : projection.state === 'latest'
         ? `完成目标 · ${formatGoalDate(projection.goal.targetDate)}`
         : `设定${relativeLabel}完成目标`;
-  const content = projection.goal?.content || `${plannedView.relativeLabel}至少推进到哪里？`;
+  const content = projection.goal?.content || `${plannedView?.isRange ? formatGoalDate(contextDate) : plannedView.relativeLabel}至少推进到哪里？`;
   const carriedAction = projection.state === 'carried'
     ? `<span class="completion-goal-update">更新${relativeLabel}目标</span>`
     : '';
@@ -2066,7 +2203,7 @@ function renderCompletionReviewBlock(item) {
 }
 
 function renderCompletionReviewAction(item, { subtask = false } = {}) {
-  if (isTomorrowView()) return '';
+  if (isTomorrowView() || isLaterView()) return '';
   const today = getLocalDateKey();
   const review = getCompletionReviewForDate(item, today);
   const resultConfig = review ? getCompletionReviewResultConfig(review.result) : null;
@@ -2279,6 +2416,19 @@ function renderTodayEntryHtml({ todo, item, isSubtask }) {
   return isSubtask ? renderTodaySubtaskHtml(todo, item) : renderTodoHtml(todo, { todayCompact: true });
 }
 
+function renderLaterEntryHtml({ todo, item, isSubtask }) {
+  return isSubtask ? renderTodaySubtaskHtml(todo, item) : renderTodoHtml(todo, { todayCompact: true });
+}
+
+function renderLaterGroups(entries) {
+  return groupEntriesByPlannedDate(entries).map(([dateKey, groupEntries]) => `
+    <li class="later-date-heading" data-planned-date="${dateKey}" aria-label="${escapeHtml(formatPlannedDateLabel(dateKey).replace(' · ', '，'))}，${groupEntries.length} 项任务">
+      <h2>${escapeHtml(formatPlannedDateLabel(dateKey))}</h2>
+      <span>${groupEntries.length}</span>
+    </li>
+    ${groupEntries.map(renderLaterEntryHtml).join('')}`).join('');
+}
+
 function renderCarryover() {
   const entries = getCarryoverEntries();
   todayCarryover.hidden = !isTodayView() || entries.length === 0;
@@ -2356,6 +2506,7 @@ function render() {
   let activeCategoryChanged = false;
   if (activeCategoryId !== TODAY_CATEGORY_ID
     && activeCategoryId !== TOMORROW_CATEGORY_ID
+    && activeCategoryId !== LATER_CATEGORY_ID
     && activeCategoryId !== UNASSIGNED_CATEGORY_ID
     && !getCategoryById(activeCategoryId)) {
     activeCategoryId = hasUnassignedTodos ? UNASSIGNED_CATEGORY_ID : TODAY_CATEGORY_ID;
@@ -2372,11 +2523,19 @@ function render() {
     const entries = getActivePlannedEntries();
     const activeEntries = entries.filter(({ item }) => !item.done);
     const completedEntries = entries.filter(({ item }) => item.done);
-    activeList.innerHTML = activeEntries.length > 0
-      ? activeEntries.map(renderTodayEntryHtml).join('')
-      : getEmptyStateHtml(scopedTodos);
-    completedList.innerHTML = completedEntries.map(renderTodayEntryHtml).join('');
-    completedSection.hidden = completedEntries.length === 0;
+    if (plannedView.isRange) {
+      activeList.innerHTML = activeEntries.length > 0
+        ? renderLaterGroups(activeEntries)
+        : getEmptyStateHtml(scopedTodos);
+      completedList.innerHTML = completedEntries.length > 0 ? renderLaterGroups(completedEntries) : '';
+      completedSection.hidden = completedEntries.length === 0;
+    } else {
+      activeList.innerHTML = activeEntries.length > 0
+        ? activeEntries.map(renderTodayEntryHtml).join('')
+        : getEmptyStateHtml(scopedTodos);
+      completedList.innerHTML = completedEntries.map(renderTodayEntryHtml).join('');
+      completedSection.hidden = completedEntries.length === 0;
+    }
   } else {
     const activeTodos = scopedTodos.filter(todo => !todo.done);
     const completedTodos = scopedTodos.filter(todo => todo.done);
@@ -2391,8 +2550,9 @@ function render() {
   taskWorkspace.classList.toggle('planned-date-view', isPlannedDateView());
   taskWorkspace.classList.toggle('today-view', isTodayView());
   taskWorkspace.classList.toggle('tomorrow-view', isTomorrowView());
+  taskWorkspace.classList.toggle('later-view', isLaterView());
   if (plannedView) {
-    workspaceLabel.textContent = `TODOLIST · ${formatDateHeading(plannedView.date)}`;
+    workspaceLabel.textContent = plannedView.isRange ? 'TODOLIST · 未来安排' : `TODOLIST · ${formatDateHeading(plannedView.date)}`;
     workspaceTitle.textContent = plannedView.title;
   } else if (activeCategoryId === UNASSIGNED_CATEGORY_ID) workspaceTitle.textContent = '未分组';
   else workspaceTitle.textContent = getCategoryName(activeCategoryId);
@@ -3194,9 +3354,15 @@ function openDatePlanMenu(id, anchor) {
   const todayButton = datePlanMenu.querySelector('[data-date-plan-action="today"]');
   const tomorrowButton = datePlanMenu.querySelector('[data-date-plan-action="tomorrow"]');
   const clearButton = datePlanMenu.querySelector('[data-date-plan-action="clear"]');
+  const customButton = datePlanMenu.querySelector('[data-date-plan-action="custom"]');
+  const currentLabel = document.getElementById('datePlanCurrentLabel');
   todayButton.setAttribute('aria-checked', String(state.item.plannedDate === todayView.dateKey));
   tomorrowButton.setAttribute('aria-checked', String(state.item.plannedDate === tomorrowView.dateKey));
   clearButton.disabled = !state.item.plannedDate;
+  customButton.setAttribute('aria-checked', String(Boolean(state.item.plannedDate && state.item.plannedDate !== todayView.dateKey && state.item.plannedDate !== tomorrowView.dateKey)));
+  currentLabel.textContent = state.item.plannedDate
+    ? (state.item.plannedDate < todayView.dateKey ? `原安排：${formatGoalDate(state.item.plannedDate)} · 已过期` : formatGoalDate(state.item.plannedDate))
+    : '今天及以后';
 
   datePlanMenu.hidden = false;
   anchor.setAttribute('aria-expanded', 'true');
@@ -3213,6 +3379,69 @@ function openDatePlanMenu(id, anchor) {
     const selected = datePlanMenu.querySelector('[role="menuitemradio"][aria-checked="true"]');
     (selected || todayButton).focus();
   });
+}
+
+function openPlannedDateDialog(id, { returnFocus = null } = {}) {
+  const state = findTodoItem(id);
+  if (!state) return;
+  const todayKey = getLocalDateKey();
+  const currentDate = state.item.plannedDate;
+  plannedDateTask.textContent = state.item.parentId
+    ? `${state.item.text} · 子任务 · ${state.todo.text}`
+    : state.item.text;
+  plannedDateInput.min = todayKey;
+  plannedDateInput.value = isSelectablePlannedDate(currentDate, todayKey)
+    ? currentDate
+    : todayKey;
+  savePlannedDateBtn.disabled = false;
+  plannedDateNote.textContent = currentDate && currentDate < todayKey
+    ? `原安排：${formatGoalDate(currentDate)} · 已过期，保存后将重新安排`
+    : '';
+  plannedDateForm.dataset.todoId = id;
+  plannedDateForm._returnFocus = returnFocus;
+  plannedDateForm._focusFallbackIds = getDatePlanFocusOrder(id);
+  closeDatePlanMenu();
+  plannedDateDialog.showModal();
+  requestAnimationFrame(() => plannedDateInput.focus());
+}
+
+function resetPlannedDateDialog() {
+  plannedDateForm.removeAttribute('data-todo-id');
+  plannedDateForm._returnFocus = null;
+  plannedDateForm._focusFallbackIds = [];
+  plannedDateNote.textContent = '';
+}
+
+async function submitPlannedDateForm(event) {
+  event.preventDefault();
+  const id = plannedDateForm.dataset.todoId;
+  const dateKey = plannedDateInput.value;
+  if (!findTodoItem(id)) return;
+  if (!isSelectablePlannedDate(dateKey)) {
+    plannedDateNote.textContent = '请选择今天或未来的有效日期。';
+    plannedDateInput.focus();
+    return;
+  }
+  const returnFocus = plannedDateForm._returnFocus;
+  const focusFallbackIds = plannedDateForm._focusFallbackIds || [];
+  const submitButton = savePlannedDateBtn;
+  submitButton.disabled = true;
+  plannedDateDialog.setAttribute('aria-busy', 'true');
+  const saved = await setTodoPlannedDate(id, dateKey, {
+    returnFocus,
+    promptForGoal: false,
+    focusFallbackIds,
+  });
+  submitButton.disabled = false;
+  plannedDateDialog.removeAttribute('aria-busy');
+  if (!saved) return;
+
+  const needsGoal = !getCompletionGoalForDate(findTodoItem(id)?.item || {}, dateKey);
+  const nextFocus = resolveDatePlanReturnFocus(id, focusFallbackIds);
+  plannedDateDialog.close();
+  if (needsGoal) {
+    requestAnimationFrame(() => openCompletionGoalDialog(id, { targetDate: dateKey, returnFocus: nextFocus }));
+  }
 }
 
 function openDeleteCategoryDialog(id) {
@@ -3717,11 +3946,13 @@ newTaskCategorySelect.addEventListener('change', () => {
   }
   syncComposerCategory();
 });
+composerPlannedDate.addEventListener('change', syncComposerCategory);
 completedToggle.addEventListener('click', () => setCompletedExpanded(!completedExpanded, { persist: true }));
 clearBtn.addEventListener('click', clearCompleted);
 
 todayTasksNav.addEventListener('click', () => setActiveCategory(TODAY_CATEGORY_ID));
 tomorrowTasksNav.addEventListener('click', () => setActiveCategory(TOMORROW_CATEGORY_ID));
+laterTasksNav.addEventListener('click', () => setActiveCategory(LATER_CATEGORY_ID));
 carryAllToTodayBtn.addEventListener('click', () => moveEntriesToToday(getCarryoverEntries()));
 todayCarryoverList.addEventListener('click', event => {
   const button = event.target.closest('[data-carryover-id]');
@@ -3811,13 +4042,18 @@ datePlanMenu.addEventListener('click', event => {
   if (!menuItem || !itemId || menuItem.disabled) return;
   const action = menuItem.dataset.datePlanAction;
   const returnFocus = datePlanReturnFocus;
+  const focusFallbackIds = getDatePlanFocusOrder(itemId);
+  if (action === 'custom') {
+    openPlannedDateDialog(itemId, { returnFocus });
+    return;
+  }
   const plannedDate = action === 'today'
     ? getPlannedViewConfig(TODAY_CATEGORY_ID).dateKey
     : action === 'tomorrow'
       ? getPlannedViewConfig(TOMORROW_CATEGORY_ID).dateKey
       : null;
   closeDatePlanMenu();
-  void setTodoPlannedDate(itemId, plannedDate, { returnFocus });
+  void setTodoPlannedDate(itemId, plannedDate, { returnFocus, focusFallbackIds });
 });
 
 datePlanMenu.addEventListener('keydown', event => {
@@ -3979,6 +4215,23 @@ function submitTextareaOnEnter(textarea, form, submitButton) {
 }
 
 completionGoalForm.addEventListener('submit', saveCompletionGoal);
+plannedDateForm.addEventListener('submit', submitPlannedDateForm);
+plannedDateDialog.addEventListener('close', () => {
+  const returnFocus = plannedDateForm._returnFocus;
+  const itemId = plannedDateForm.dataset.todoId;
+  const focusFallbackIds = plannedDateForm._focusFallbackIds || [];
+  const nextFocus = resolveDatePlanReturnFocus(itemId, focusFallbackIds);
+  resetPlannedDateDialog();
+  if (returnFocus?.isConnected) requestAnimationFrame(() => returnFocus.focus());
+  else if (nextFocus?.isConnected) requestAnimationFrame(() => nextFocus.focus());
+});
+plannedDateInput.addEventListener('change', () => {
+  const isValid = isSelectablePlannedDate(plannedDateInput.value);
+  savePlannedDateBtn.disabled = !isValid;
+  plannedDateNote.textContent = isValid
+    ? ''
+    : '请选择今天或未来的有效日期。';
+});
 submitTextareaOnEnter(completionGoalContent, completionGoalForm, saveCompletionGoalBtn);
 completionGoalDate.addEventListener('change', () => {
   const editingGoal = getEditingCompletionGoal();
@@ -4092,6 +4345,14 @@ function updateDateTime() {
   if (nextLocalDateKey !== currentLocalDateKey) {
     currentLocalDateKey = nextLocalDateKey;
     setDailyQuote();
+    if (plannedDateDialog.open) {
+      plannedDateInput.min = nextLocalDateKey;
+      const isValid = isSelectablePlannedDate(plannedDateInput.value, nextLocalDateKey);
+      savePlannedDateBtn.disabled = !isValid;
+      if (!isValid) {
+        plannedDateNote.textContent = '日期已变化，请重新选择今天或未来的日期。';
+      }
+    }
     if (activeUserId) render();
   }
 }

@@ -4561,6 +4561,31 @@ body.theme-light .todo-item:hover { background: var(--panel-bg-strong); }
 .date-plan-menu .date-plan-clear:not(:disabled):hover,
 .date-plan-menu .date-plan-clear:not(:disabled):focus-visible { color: var(--neon-pink); }
 
+.composer-planned-date {
+  display: grid;
+  grid-template-columns: auto minmax(0, 170px);
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 0 30px;
+  color: var(--text-dim);
+  font: 650 0.58rem/1.2 var(--utility-font);
+}
+.composer-planned-date input { min-width: 0; height: 32px; padding: 0 8px; border: 1px solid var(--panel-border); border-radius: 3px; background: var(--side-surface); color: var(--text); font: 500 0.7rem/1 var(--body-font); color-scheme: dark; }
+body.theme-light .composer-planned-date input { color-scheme: light; }
+.composer-planned-date input:focus { border-color: var(--neon-purple); outline: 2px solid color-mix(in srgb, var(--neon-purple) 18%, transparent); outline-offset: 1px; }
+
+.later-date-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 24px 0 9px; padding: 0 2px 7px; border-bottom: 1px solid var(--panel-border); list-style: none; }
+.later-date-heading:first-child { margin-top: 0; }
+.later-date-heading h2 { color: var(--text); font-family: var(--display-font); font-size: 0.92rem; }
+.later-date-heading h2::before { content: ''; display: inline-block; width: 5px; height: 5px; margin: 0 7px 2px 0; border-radius: 50%; background: var(--neon-purple); }
+.later-date-heading span { color: var(--side-muted); font: 700 0.58rem/1 var(--utility-font); }
+.later-view .task-section-heading { display: none; }
+.later-view .completed-section { margin-top: 24px; }
+
+.planned-date-dialog { width: min(94vw, 460px); }
+.planned-date-task { margin: -6px 0 3px; padding-bottom: 12px; border-bottom: 1px solid var(--panel-border); color: var(--text); font-family: var(--display-font); font-size: 0.9rem; font-weight: 620; overflow-wrap: anywhere; }
+.planned-date-note { min-height: 18px; color: var(--neon-orange); font-size: 0.65rem; line-height: 1.45; }
+
 .todo-item.sidebar-target-highlight { animation: sidebar-target-highlight 1100ms ease-out; }
 
 @keyframes sidebar-target-highlight {
@@ -5026,6 +5051,19 @@ body.theme-light .todo-item:hover { background: var(--panel-bg-strong); }
 .tomorrow-nav-item.active svg,
 .tomorrow-nav-item.active b { color: var(--neon-blue); }
 
+.later-nav-item svg {
+  color: color-mix(in srgb, var(--neon-purple) 76%, var(--side-muted));
+}
+
+.later-nav-item.active {
+  border-color: color-mix(in srgb, var(--neon-purple) 30%, var(--side-border));
+  background: color-mix(in srgb, var(--neon-purple) 9%, var(--side-surface-subtle));
+  box-shadow: inset 3px 0 0 var(--neon-purple);
+}
+
+.later-nav-item.active svg,
+.later-nav-item.active b { color: var(--neon-purple); }
+
 .schedule-toggle.is-today,
 .subtask-schedule-toggle.is-today {
   opacity: 1;
@@ -5042,6 +5080,13 @@ body.theme-light .todo-item:hover { background: var(--panel-bg-strong); }
 
 .schedule-toggle.is-scheduled,
 .subtask-schedule-toggle.is-scheduled { opacity: 1; }
+
+.schedule-toggle.is-overdue,
+.subtask-schedule-toggle.is-overdue {
+  opacity: 1;
+  background: color-mix(in srgb, var(--neon-pink) 10%, transparent);
+  color: var(--neon-pink);
+}
 
 .schedule-toggle:hover,
 .schedule-toggle:focus-visible,
@@ -5626,6 +5671,10 @@ body.theme-light .app-dialog input[type="date"] { color-scheme: light; }
 .completion-review-actions { grid-template-columns: auto 1fr auto auto; }
 
 @media (max-width: 620px) {
+  .composer-planned-date { grid-template-columns: 1fr; gap: 5px; margin-left: 30px; }
+  .composer-planned-date input { width: 100%; }
+  .planned-date-dialog { width: calc(100vw - 18px); max-height: calc(100vh - 18px); }
+  .planned-date-dialog form { max-height: calc(100vh - 20px); padding: 19px 17px; }
   .completion-review-dialog { width: calc(100vw - 18px); max-height: calc(100vh - 18px); }
   .completion-review-dialog form { max-height: calc(100vh - 20px); padding: 19px 17px; }
   .completion-review-actions { position: sticky; bottom: -19px; margin: 4px -17px -19px; padding: 12px 17px 16px; background: var(--panel-bg); border-top: 1px solid var(--panel-border); }
