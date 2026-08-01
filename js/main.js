@@ -92,6 +92,28 @@ const completionReviewHistory = document.getElementById('completionReviewHistory
 const completionReviewStatus = document.getElementById('completionReviewStatus');
 const deleteCompletionReviewBtn = document.getElementById('deleteCompletionReviewBtn');
 const saveCompletionReviewBtn = document.getElementById('saveCompletionReviewBtn');
+const dailyReviewEntry = document.getElementById('dailyReviewEntry');
+const dailyReviewOpenBtn = document.getElementById('dailyReviewOpenBtn');
+const dailyReviewActionBtn = document.getElementById('dailyReviewActionBtn');
+const dailyReviewEntryMeta = document.getElementById('dailyReviewEntryMeta');
+const dailyReviewEntrySummary = document.getElementById('dailyReviewEntrySummary');
+const dailyReviewActionLabel = document.getElementById('dailyReviewActionLabel');
+const dailyReviewDialog = document.getElementById('dailyReviewDialog');
+const dailyReviewForm = document.getElementById('dailyReviewForm');
+const dailyReviewDate = document.getElementById('dailyReviewDate');
+const dailyReviewContent = document.getElementById('dailyReviewContent');
+const dailyReviewContentCount = document.getElementById('dailyReviewContentCount');
+const dailyReviewHistoryToggle = document.getElementById('dailyReviewHistoryToggle');
+const dailyReviewHistoryLabel = document.getElementById('dailyReviewHistoryLabel');
+const dailyReviewHistoryShell = document.getElementById('dailyReviewHistoryShell');
+const dailyReviewHistory = document.getElementById('dailyReviewHistory');
+const dailyReviewBackfillDate = document.getElementById('dailyReviewBackfillDate');
+const openDailyReviewBackfillBtn = document.getElementById('openDailyReviewBackfillBtn');
+const dailyReviewConflict = document.getElementById('dailyReviewConflict');
+const reloadDailyReviewBtn = document.getElementById('reloadDailyReviewBtn');
+const dailyReviewStatus = document.getElementById('dailyReviewStatus');
+const deleteDailyReviewBtn = document.getElementById('deleteDailyReviewBtn');
+const saveDailyReviewBtn = document.getElementById('saveDailyReviewBtn');
 
 const circumference = 2 * Math.PI * 60;
 const TIME_VISIBILITY_STORAGE_PREFIX = 'geek-todos-show-times:';
@@ -131,6 +153,7 @@ let todoChannel = null;
 let categoryChannel = null;
 let completionGoalChannel = null;
 let completionReviewChannel = null;
+let dailyReviewChannel = null;
 let realtimeRefreshTimer = null;
 const pendingRealtimeEchoes = new Map();
 const pendingDescriptionSaves = new Map();
@@ -148,6 +171,11 @@ let completionReviewTodoId = null;
 let completionReviewEditingId = null;
 let completionReviewReturnFocus = null;
 let completionReviewHistoryLimit = 5;
+let dailyReviewEditingId = null;
+let dailyReviewEditingDate = null;
+let dailyReviewReturnFocus = null;
+let dailyReviewHistoryLimit = 5;
+let dailyReviewLoadedUpdatedAt = null;
 let overdueCompletionReviewPromise = null;
 
 const AUTOMATIC_MISSED_REVIEW_CONTENT = '截至次日未评价完成情况，系统自动记为未推进。';
@@ -395,7 +423,7 @@ function setSidebarQuoteVisible(visible, { persist = false } = {}) {
 async function restoreCloudState(error) {
   showCloudError(error);
   try {
-    await Promise.all([loadCategories(), loadTodos()]);
+    await Promise.all([loadCategories(), loadTodos(), loadDailyReviews()]);
     openDescriptions = loadOpenDescriptions(todos);
     render();
   } catch (reloadError) {
@@ -526,6 +554,43 @@ function formatGoalDate(dateKey) {
   if (!dateKey) return '';
   const [, month, day] = dateKey.split('-').map(Number);
   return `${month}月${day}日`;
+}
+
+function formatDailyReviewDate(dateKey) {
+  if (!dateKey) return '';
+  const [year, month, day] = dateKey.split('-').map(Number);
+  return `${year}年${month}月${day}日`;
+}
+
+function formatReviewUpdatedTime(timestamp) {
+  if (!timestamp) return '';
+  return new Date(timestamp).toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+function sortDailyReviews(reviews = dailyReviews) {
+  return [...reviews].sort((a, b) => (
+    b.reviewDate.localeCompare(a.reviewDate)
+    || (b.updatedAt || 0) - (a.updatedAt || 0)
+  ));
+}
+
+function upsertDailyReviewInMemory(review) {
+  const existingIndex = dailyReviews.findIndex(item => item.id === review.id);
+  if (existingIndex === -1) dailyReviews.push(review);
+  else dailyReviews[existingIndex] = review;
+  dailyReviews.sort((a, b) => (
+    b.reviewDate.localeCompare(a.reviewDate)
+    || (b.updatedAt || 0) - (a.updatedAt || 0)
+  ));
+}
+
+function removeDailyReviewFromMemory(reviewId) {
+  const index = dailyReviews.findIndex(review => review.id === reviewId);
+  if (index !== -1) dailyReviews.splice(index, 1);
 }
 
 function sortCompletionGoals(goals = []) {
@@ -2631,6 +2696,7 @@ function render() {
   else workspaceTitle.textContent = getCategoryName(activeCategoryId);
   if (!plannedView) workspaceLabel.textContent = 'TODOLIST · 专注工作台';
 
+  renderDailyReviewEntry();
   renderCarryover();
   renderCategoryNavigation();
   syncComposerCategory();
@@ -2640,6 +2706,181 @@ function render() {
 function renderChangedTodos(todoIds) {
   void todoIds;
   render();
+}
+
+function renderDailyReviewEntry() {
+  const visible = isTodayView();
+  dailyReviewEntry.hidden = !visible;
+  if (!visible) return;
+
+  const review = getDailyReviewForDate(getLocalDateKey());
+  dailyReviewEntry.classList.toggle('has-review', Boolean(review));
+  if (review) {
+    dailyReviewEntryMeta.textContent = `已更新 ${formatReviewUpdatedTime(review.updatedAt)}`;
+    dailyReviewEntrySummary.textContent = review.content;
+    dailyReviewActionLabel.textContent = '编辑';
+    dailyReviewOpenBtn.setAttribute('aria-label', '编辑今日复盘');
+    dailyReviewActionBtn.setAttribute('aria-label', '编辑今日复盘');
+  } else {
+    dailyReviewEntryMeta.textContent = '尚未记录';
+    dailyReviewEntrySummary.textContent = '写下今天实际发生了什么，以及明天准备如何调整。';
+    dailyReviewActionLabel.textContent = '写今日复盘';
+    dailyReviewOpenBtn.setAttribute('aria-label', '写今日复盘');
+    dailyReviewActionBtn.setAttribute('aria-label', '写今日复盘');
+  }
+}
+
+function getEditingDailyReview() {
+  return dailyReviewEditingId
+    ? dailyReviews.find(review => review.id === dailyReviewEditingId) || null
+    : null;
+}
+
+function updateDailyReviewContentCount() {
+  dailyReviewContentCount.textContent = `${dailyReviewContent.value.length}/3000`;
+}
+
+function renderDailyReviewHistory() {
+  const reviews = sortDailyReviews();
+  dailyReviewHistoryLabel.textContent = `历史复盘 ${reviews.length}`;
+  const visibleReviews = reviews.slice(0, dailyReviewHistoryLimit);
+  dailyReviewHistory.innerHTML = visibleReviews.length === 0
+    ? '<p class="completion-history-empty">还没有复盘记录。今天保存后会按日期积累在这里。</p>'
+    : `${visibleReviews.map(review => `
+        <button class="daily-review-history-item ${review.id === dailyReviewEditingId ? 'is-current' : ''}" type="button" data-daily-review-history-id="${review.id}" aria-label="编辑 ${formatDailyReviewDate(review.reviewDate)} 的复盘">
+          <span><b>${formatGoalDate(review.reviewDate)}</b><small>更新 ${formatReviewUpdatedTime(review.updatedAt)}</small>${review.id === dailyReviewEditingId ? '<em>当前</em>' : ''}</span>
+          <p>${escapeHtml(review.content)}</p>
+        </button>`).join('')}
+      ${reviews.length > visibleReviews.length ? '<button class="completion-history-more" type="button" data-daily-review-history-more>加载更多</button>' : ''}`;
+}
+
+function syncDailyReviewForm(reviewDate, { preferredReviewId = null } = {}) {
+  const today = getLocalDateKey();
+  const safeDate = reviewDate && reviewDate <= today ? reviewDate : today;
+  const review = preferredReviewId
+    ? dailyReviews.find(item => item.id === preferredReviewId)
+    : getDailyReviewForDate(safeDate);
+
+  dailyReviewEditingId = review?.id || null;
+  dailyReviewEditingDate = review?.reviewDate || safeDate;
+  dailyReviewLoadedUpdatedAt = review?.updatedAt || null;
+  dailyReviewDate.textContent = formatDailyReviewDate(dailyReviewEditingDate);
+  dailyReviewBackfillDate.max = today;
+  dailyReviewBackfillDate.value = dailyReviewEditingDate;
+  dailyReviewContent.value = review?.content || '';
+  dailyReviewConflict.hidden = true;
+  dailyReviewStatus.textContent = '';
+  deleteDailyReviewBtn.hidden = !review;
+  updateDailyReviewContentCount();
+  renderDailyReviewHistory();
+}
+
+function openDailyReviewDialog({ reviewDate = getLocalDateKey(), reviewId = null, returnFocus = null } = {}) {
+  dailyReviewReturnFocus = returnFocus || document.activeElement;
+  dailyReviewHistoryLimit = 5;
+  dailyReviewHistoryShell.hidden = true;
+  dailyReviewHistoryToggle.setAttribute('aria-expanded', 'false');
+  dailyReviewBackfillDate.max = getLocalDateKey();
+  dailyReviewBackfillDate.value = getLocalDateKey();
+  syncDailyReviewForm(reviewDate, { preferredReviewId: reviewId });
+  if (!dailyReviewDialog.open) dailyReviewDialog.showModal();
+  requestAnimationFrame(() => dailyReviewContent.focus());
+}
+
+function resetDailyReviewDialog() {
+  dailyReviewEditingId = null;
+  dailyReviewEditingDate = null;
+  dailyReviewLoadedUpdatedAt = null;
+  dailyReviewHistoryLimit = 5;
+  dailyReviewContent.value = '';
+  dailyReviewStatus.textContent = '';
+  dailyReviewConflict.hidden = true;
+  updateDailyReviewContentCount();
+  const returnFocus = dailyReviewReturnFocus;
+  dailyReviewReturnFocus = null;
+  if (returnFocus?.isConnected) returnFocus.focus();
+  else requestAnimationFrame(() => dailyReviewOpenBtn.focus());
+}
+
+async function saveDailyReview(event) {
+  event.preventDefault();
+  const reviewDate = dailyReviewEditingDate;
+  const content = dailyReviewContent.value.trim();
+  const today = getLocalDateKey();
+  if (!reviewDate || reviewDate > today) {
+    dailyReviewStatus.textContent = '不能保存未来日期的复盘。';
+    return;
+  }
+  if (!content) {
+    dailyReviewStatus.textContent = '请写下一点今天发生的事情。';
+    dailyReviewContent.focus();
+    return;
+  }
+  if (content.length > 3000) {
+    dailyReviewStatus.textContent = '复盘正文不能超过 3000 个字符。';
+    dailyReviewContent.focus();
+    return;
+  }
+
+  saveDailyReviewBtn.disabled = true;
+  deleteDailyReviewBtn.disabled = true;
+  dailyReviewDialog.setAttribute('aria-busy', 'true');
+  dailyReviewStatus.textContent = '正在保存…';
+  try {
+    const saved = await upsertDailyReviewRecord({ reviewDate, content });
+    upsertDailyReviewInMemory(saved);
+    dailyReviewEditingId = saved.id;
+    dailyReviewLoadedUpdatedAt = saved.updatedAt;
+    renderDailyReviewEntry();
+    showToast(`已保存 ${formatGoalDate(saved.reviewDate)} 的今日复盘`);
+    dailyReviewDialog.close();
+  } catch (error) {
+    dailyReviewStatus.textContent = error?.message || '保存失败，请稍后重试';
+  } finally {
+    saveDailyReviewBtn.disabled = false;
+    deleteDailyReviewBtn.disabled = false;
+    dailyReviewDialog.removeAttribute('aria-busy');
+  }
+}
+
+async function deleteDailyReview() {
+  const review = getEditingDailyReview();
+  if (!review) return;
+  if (!window.confirm(`删除 ${formatGoalDate(review.reviewDate)} 的今日复盘？此操作无法撤销。`)) return;
+
+  deleteDailyReviewBtn.disabled = true;
+  saveDailyReviewBtn.disabled = true;
+  dailyReviewStatus.textContent = '正在删除…';
+  try {
+    await deleteDailyReviewRecord(review.id);
+    removeDailyReviewFromMemory(review.id);
+    renderDailyReviewEntry();
+    showToast('已删除今日复盘');
+    dailyReviewDialog.close();
+  } catch (error) {
+    dailyReviewStatus.textContent = error?.message || '删除失败，请稍后重试';
+  } finally {
+    deleteDailyReviewBtn.disabled = false;
+    saveDailyReviewBtn.disabled = false;
+  }
+}
+
+function markDailyReviewRemoteChange() {
+  if (!dailyReviewDialog.open || !dailyReviewEditingDate) return;
+  const remote = getDailyReviewForDate(dailyReviewEditingDate);
+  const remoteUpdatedAt = remote?.updatedAt || null;
+  const recordChanged = remote?.id !== dailyReviewEditingId
+    || remoteUpdatedAt !== dailyReviewLoadedUpdatedAt;
+  if (!recordChanged) return;
+  dailyReviewConflict.hidden = false;
+  renderDailyReviewHistory();
+}
+
+function reloadActiveDailyReview() {
+  if (!dailyReviewEditingDate) return;
+  const remote = getDailyReviewForDate(dailyReviewEditingDate);
+  syncDailyReviewForm(dailyReviewEditingDate, { preferredReviewId: remote?.id || null });
+  dailyReviewContent.focus();
 }
 
 // ============================================================
@@ -4396,6 +4637,42 @@ completionReviewHistory.addEventListener('click', event => {
   completionReviewContent.focus();
 });
 completionReviewDialog.addEventListener('close', resetCompletionReviewDialog);
+dailyReviewOpenBtn.addEventListener('click', () => openDailyReviewDialog({ returnFocus: dailyReviewOpenBtn }));
+dailyReviewActionBtn.addEventListener('click', () => openDailyReviewDialog({ returnFocus: dailyReviewActionBtn }));
+dailyReviewForm.addEventListener('submit', saveDailyReview);
+dailyReviewContent.addEventListener('input', updateDailyReviewContentCount);
+deleteDailyReviewBtn.addEventListener('click', () => void deleteDailyReview());
+reloadDailyReviewBtn.addEventListener('click', reloadActiveDailyReview);
+dailyReviewHistoryToggle.addEventListener('click', () => {
+  const expanded = dailyReviewHistoryShell.hidden;
+  dailyReviewHistoryShell.hidden = !expanded;
+  dailyReviewHistoryToggle.setAttribute('aria-expanded', String(expanded));
+});
+openDailyReviewBackfillBtn.addEventListener('click', () => {
+  const selectedDate = dailyReviewBackfillDate.value;
+  const today = getLocalDateKey();
+  if (!selectedDate || selectedDate > today) {
+    dailyReviewStatus.textContent = '请选择今天或过去的日期。';
+    dailyReviewBackfillDate.focus();
+    return;
+  }
+  syncDailyReviewForm(selectedDate);
+  dailyReviewContent.focus();
+});
+dailyReviewHistory.addEventListener('click', event => {
+  if (event.target.closest('[data-daily-review-history-more]')) {
+    dailyReviewHistoryLimit += 5;
+    renderDailyReviewHistory();
+    return;
+  }
+  const historyButton = event.target.closest('[data-daily-review-history-id]');
+  if (!historyButton) return;
+  const review = dailyReviews.find(item => item.id === historyButton.dataset.dailyReviewHistoryId);
+  if (!review) return;
+  syncDailyReviewForm(review.reviewDate, { preferredReviewId: review.id });
+  dailyReviewContent.focus();
+});
+dailyReviewDialog.addEventListener('close', resetDailyReviewDialog);
 document.querySelectorAll('[data-dialog-close]').forEach(button => {
   button.addEventListener('click', () => closeDialog(button.dataset.dialogClose));
 });
@@ -4435,6 +4712,9 @@ async function updateDateTime() {
       }
     }
     if (completionReviewDialog.open) completionReviewDate.max = nextLocalDateKey;
+    if (dailyReviewDialog.open && dailyReviewEditingDate > nextLocalDateKey) {
+      syncDailyReviewForm(nextLocalDateKey);
+    }
   }
   if (activeUserId) {
     const createdReviewCount = await ensureOverdueCompletionReviews(nextLocalDateKey);
@@ -4543,7 +4823,16 @@ function scheduleRealtimeRefresh() {
             historyExpanded: !completionReviewHistory.hidden,
           }
         : null;
-      await Promise.all([loadCategories(), loadTodos()]);
+      const dailyReviewDialogState = dailyReviewDialog.open && dailyReviewEditingDate
+        ? {
+            reviewDate: dailyReviewEditingDate,
+            reviewId: dailyReviewEditingId,
+            content: dailyReviewContent.value,
+            historyExpanded: !dailyReviewHistoryShell.hidden,
+            loadedUpdatedAt: dailyReviewLoadedUpdatedAt,
+          }
+        : null;
+      await Promise.all([loadCategories(), loadTodos(), loadDailyReviews()]);
       if (activeUserId !== expectedUserId) return;
       openDescriptions = loadOpenDescriptions(todos);
       render();
@@ -4561,6 +4850,19 @@ function scheduleRealtimeRefresh() {
         updateCompletionReviewContentCount();
         completionReviewHistory.hidden = !reviewDialogState.historyExpanded;
         completionReviewHistoryToggle.setAttribute('aria-expanded', String(reviewDialogState.historyExpanded));
+      }
+      if (dailyReviewDialogState) {
+        dailyReviewEditingDate = dailyReviewDialogState.reviewDate;
+        dailyReviewEditingId = dailyReviewDialogState.reviewId;
+        dailyReviewLoadedUpdatedAt = dailyReviewDialogState.loadedUpdatedAt;
+        dailyReviewDate.textContent = formatDailyReviewDate(dailyReviewDialogState.reviewDate);
+        dailyReviewContent.value = dailyReviewDialogState.content;
+        dailyReviewHistoryShell.hidden = !dailyReviewDialogState.historyExpanded;
+        dailyReviewHistoryToggle.setAttribute('aria-expanded', String(dailyReviewDialogState.historyExpanded));
+        deleteDailyReviewBtn.hidden = !getDailyReviewForDate(dailyReviewDialogState.reviewDate);
+        updateDailyReviewContentCount();
+        renderDailyReviewHistory();
+        markDailyReviewRemoteChange();
       }
     } catch (error) {
       console.error('实时同步刷新失败:', error);
@@ -4606,11 +4908,12 @@ async function startTodoApp(user) {
     restoreExpandedCompletedSubtasks(user.id);
     openDescriptions = loadOpenDescriptions(todos);
     render();
-    [todoChannel, categoryChannel, completionGoalChannel, completionReviewChannel] = await Promise.all([
+    [todoChannel, categoryChannel, completionGoalChannel, completionReviewChannel, dailyReviewChannel] = await Promise.all([
       subscribeTodoChanges(user.id, handleRealtimeTodoChange),
       subscribeCategoryChanges(user.id, scheduleRealtimeRefresh),
       subscribeCompletionGoalChanges(user.id, scheduleRealtimeRefresh),
       subscribeCompletionReviewChanges(user.id, scheduleRealtimeRefresh),
+      subscribeDailyReviewChanges(user.id, scheduleRealtimeRefresh),
     ]);
   } catch (error) {
     if (sessionVersion !== appSessionVersion) return;
@@ -4625,6 +4928,7 @@ function stopTodoApp() {
   closeDatePlanMenu();
   if (completionGoalDialog.open) completionGoalDialog.close();
   if (completionReviewDialog.open) completionReviewDialog.close();
+  if (dailyReviewDialog.open) dailyReviewDialog.close();
   if (deleteCategoryDialog.open) deleteCategoryDialog.close();
   activeUserId = null;
   clearTimeout(realtimeRefreshTimer);
@@ -4640,10 +4944,12 @@ function stopTodoApp() {
   unsubscribeCategoryChanges(categoryChannel);
   unsubscribeCompletionGoalChanges(completionGoalChannel);
   unsubscribeCompletionReviewChanges(completionReviewChannel);
+  unsubscribeDailyReviewChanges(dailyReviewChannel);
   todoChannel = null;
   categoryChannel = null;
   completionGoalChannel = null;
   completionReviewChannel = null;
+  dailyReviewChannel = null;
   setCurrentUser(null);
   openDescriptions = new Set();
   expandedCategoryIds = new Set();
@@ -4662,5 +4968,6 @@ window.addEventListener('beforeunload', () => {
   unsubscribeCategoryChanges(categoryChannel);
   unsubscribeCompletionGoalChanges(completionGoalChannel);
   unsubscribeCompletionReviewChanges(completionReviewChannel);
+  unsubscribeDailyReviewChanges(dailyReviewChannel);
 });
 initAppShell();

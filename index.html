@@ -182,6 +182,20 @@
             </div>
           </div>
 
+          <section class="daily-review-entry" id="dailyReviewEntry" aria-label="今日复盘" hidden>
+            <button class="daily-review-entry-main" id="dailyReviewOpenBtn" type="button">
+              <span class="daily-review-entry-heading">
+                <strong>今日复盘</strong>
+                <span id="dailyReviewEntryMeta">尚未记录</span>
+              </span>
+              <span class="daily-review-entry-summary" id="dailyReviewEntrySummary">写下今天实际发生了什么，以及明天准备如何调整。</span>
+            </button>
+            <button class="daily-review-entry-action" id="dailyReviewActionBtn" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3Z"/><path d="m13.5 8.5 3 3"/></svg>
+              <span id="dailyReviewActionLabel">写今日复盘</span>
+            </button>
+          </section>
+
           <div class="input-section">
             <div class="input-group">
               <div class="composer-category" id="composerCategory" hidden>
@@ -490,6 +504,42 @@
           <span></span>
           <button class="dialog-secondary" type="button" data-dialog-close="completionReviewDialog">取消</button>
           <button class="dialog-primary" id="saveCompletionReviewBtn" type="submit">保存评价</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="app-dialog daily-review-dialog" id="dailyReviewDialog">
+      <form id="dailyReviewForm">
+        <div class="dialog-heading">
+          <div><span>工作日记录</span><h2>今日复盘</h2></div>
+          <button type="button" data-dialog-close="dailyReviewDialog" title="关闭" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+        </div>
+        <p class="daily-review-date" id="dailyReviewDate"></p>
+        <aside class="daily-review-conflict" id="dailyReviewConflict" hidden>
+          <div><strong>这条记录已在其他设备更新</strong><span>当前输入已保留，你可以重新载入云端内容，或继续保存并覆盖。</span></div>
+          <button id="reloadDailyReviewBtn" type="button">重新载入</button>
+        </aside>
+        <label for="dailyReviewContent">今天发生了什么</label>
+        <textarea id="dailyReviewContent" maxlength="3000" required placeholder="今天实际推进或完成了什么？&#10;有哪些临时事务、计划外探索或打断？&#10;发现了哪些阻塞、前置任务或依赖？&#10;明天准备继续、调整或放弃什么？"></textarea>
+        <div class="daily-review-content-meta"><span>记录属于整个工作日，不改变任何任务状态</span><b id="dailyReviewContentCount">0/3000</b></div>
+        <button class="completion-history-toggle" id="dailyReviewHistoryToggle" type="button" aria-expanded="false" aria-controls="dailyReviewHistoryShell">
+          <svg viewBox="0 0 12 12" aria-hidden="true"><polyline points="2,3 6,8 10,3" /></svg>
+          <span id="dailyReviewHistoryLabel">历史复盘 0</span>
+        </button>
+        <div class="daily-review-history-shell" id="dailyReviewHistoryShell" hidden>
+          <div class="daily-review-backfill">
+            <label for="dailyReviewBackfillDate">补录日期</label>
+            <input id="dailyReviewBackfillDate" type="date">
+            <button id="openDailyReviewBackfillBtn" type="button">打开</button>
+          </div>
+          <div class="daily-review-history" id="dailyReviewHistory"></div>
+        </div>
+        <p class="daily-review-status" id="dailyReviewStatus" role="status" aria-live="polite"></p>
+        <div class="dialog-actions daily-review-actions">
+          <button class="dialog-danger" id="deleteDailyReviewBtn" type="button" hidden>删除这条</button>
+          <span></span>
+          <button class="dialog-secondary" type="button" data-dialog-close="dailyReviewDialog">取消</button>
+          <button class="dialog-primary" id="saveDailyReviewBtn" type="submit">保存复盘</button>
         </div>
       </form>
     </dialog>

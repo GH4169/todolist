@@ -66,6 +66,19 @@ create table if not exists public.todo_completion_reviews (
   constraint todo_completion_reviews_one_per_day unique (todo_id, review_date)
 );
 
+create table if not exists public.daily_reviews (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  review_date date not null,
+  content text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint daily_reviews_content_check check (
+    length(trim(content)) between 1 and 3000
+  ),
+  constraint daily_reviews_one_per_day unique (user_id, review_date)
+);
+
 -- 兼容曾提前创建过目标表但字段不完整的部署。
 alter table public.todo_completion_goals add column if not exists user_id uuid;
 alter table public.todo_completion_goals add column if not exists todo_id uuid;
@@ -227,6 +240,9 @@ create index if not exists todo_completion_goals_user_todo_date_idx
 create index if not exists todo_completion_reviews_user_todo_date_idx
   on public.todo_completion_reviews(user_id, todo_id, review_date desc);
 
+create index if not exists daily_reviews_user_date_idx
+  on public.daily_reviews(user_id, review_date desc);
+
 create or replace function public.set_todos_updated_at()
 returns trigger
 language plpgsql
@@ -258,10 +274,16 @@ create trigger set_todo_completion_reviews_updated_at
 before update on public.todo_completion_reviews
 for each row execute function public.set_todos_updated_at();
 
+drop trigger if exists set_daily_reviews_updated_at on public.daily_reviews;
+create trigger set_daily_reviews_updated_at
+before update on public.daily_reviews
+for each row execute function public.set_todos_updated_at();
+
 alter table public.todos enable row level security;
 alter table public.todo_categories enable row level security;
 alter table public.todo_completion_goals enable row level security;
 alter table public.todo_completion_reviews enable row level security;
+alter table public.daily_reviews enable row level security;
 
 revoke all privileges on table public.todos from anon;
 revoke all privileges on table public.todos from public;
@@ -275,6 +297,9 @@ grant select, insert, update, delete on table public.todo_completion_goals to au
 revoke all privileges on table public.todo_completion_reviews from anon;
 revoke all privileges on table public.todo_completion_reviews from public;
 grant select, insert, update, delete on table public.todo_completion_reviews to authenticated;
+revoke all privileges on table public.daily_reviews from anon;
+revoke all privileges on table public.daily_reviews from public;
+grant select, insert, update, delete on table public.daily_reviews to authenticated;
 
 drop policy if exists "Users can view own todos" on public.todos;
 drop policy if exists "Users can create own todos" on public.todos;
@@ -362,6 +387,28 @@ with check (user_id = (select auth.uid()));
 
 create policy "Users can delete own todo completion reviews"
 on public.todo_completion_reviews for delete to authenticated
+using (user_id = (select auth.uid()));
+
+drop policy if exists "Users can view own daily reviews" on public.daily_reviews;
+drop policy if exists "Users can create own daily reviews" on public.daily_reviews;
+drop policy if exists "Users can update own daily reviews" on public.daily_reviews;
+drop policy if exists "Users can delete own daily reviews" on public.daily_reviews;
+
+create policy "Users can view own daily reviews"
+on public.daily_reviews for select to authenticated
+using (user_id = (select auth.uid()));
+
+create policy "Users can create own daily reviews"
+on public.daily_reviews for insert to authenticated
+with check (user_id = (select auth.uid()));
+
+create policy "Users can update own daily reviews"
+on public.daily_reviews for update to authenticated
+using (user_id = (select auth.uid()))
+with check (user_id = (select auth.uid()));
+
+create policy "Users can delete own daily reviews"
+on public.daily_reviews for delete to authenticated
 using (user_id = (select auth.uid()));
 
 create or replace function public.broadcast_todo_changes()
@@ -464,6 +511,31 @@ create trigger broadcast_todo_completion_review_changes
 after insert or update or delete on public.todo_completion_reviews
 for each row execute function public.broadcast_todo_completion_review_changes();
 
+create or replace function public.broadcast_daily_review_changes()
+returns trigger
+security definer
+language plpgsql
+set search_path = ''
+as $$
+begin
+  perform realtime.broadcast_changes(
+    'daily-reviews:' || coalesce(new.user_id, old.user_id)::text,
+    tg_op,
+    tg_op,
+    tg_table_name,
+    tg_table_schema,
+    new,
+    old
+  );
+  return null;
+end;
+$$;
+
+drop trigger if exists broadcast_daily_review_changes on public.daily_reviews;
+create trigger broadcast_daily_review_changes
+after insert or update or delete on public.daily_reviews
+for each row execute function public.broadcast_daily_review_changes();
+
 drop policy if exists "Users can receive own todo broadcasts" on realtime.messages;
 create policy "Users can receive own todo broadcasts"
 on realtime.messages for select to authenticated
@@ -473,7 +545,8 @@ using (
     'todos:' || (select auth.uid())::text,
     'todo-categories:' || (select auth.uid())::text,
     'todo-completion-goals:' || (select auth.uid())::text,
-    'todo-completion-reviews:' || (select auth.uid())::text
+    'todo-completion-reviews:' || (select auth.uid())::text,
+    'daily-reviews:' || (select auth.uid())::text
   )
 );
 
@@ -518,6 +591,16 @@ begin
       and tablename = 'todo_completion_reviews'
   ) then
     alter publication supabase_realtime drop table public.todo_completion_reviews;
+  end if;
+
+  if exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'daily_reviews'
+  ) then
+    alter publication supabase_realtime drop table public.daily_reviews;
   end if;
 end
 $$;

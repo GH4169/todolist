@@ -19,6 +19,7 @@ let todos = [];
 let categories = [];
 let completionGoals = [];
 let completionReviews = [];
+let dailyReviews = [];
 let currentUserId = null;
 
 function setCurrentUser(user) {
@@ -27,6 +28,7 @@ function setCurrentUser(user) {
   categories = [];
   completionGoals = [];
   completionReviews = [];
+  dailyReviews = [];
 }
 
 function requireCurrentUserId() {
@@ -104,6 +106,27 @@ function normalizeCompletionReviewContent(content, result, goalContentSnapshot) 
 function compareCompletionReviewDate(a, b) {
   return b.reviewDate.localeCompare(a.reviewDate)
     || (b.updatedAt || 0) - (a.updatedAt || 0);
+}
+
+function mapDailyReviewRow(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    reviewDate: row.review_date,
+    content: row.content,
+    createdAt: parseTime(row.created_at),
+    updatedAt: parseTime(row.updated_at),
+  };
+}
+
+function compareDailyReviewDate(a, b) {
+  return b.reviewDate.localeCompare(a.reviewDate)
+    || (b.updatedAt || 0) - (a.updatedAt || 0);
+}
+
+function getStorageLocalDateKey(date = new Date()) {
+  const pad = value => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 function attachCompletionGoals(items, goals = completionGoals) {
@@ -413,6 +436,58 @@ async function upsertCompletionReviewForDate({
   return mapCompletionReviewRow(data);
 }
 
+async function loadDailyReviews() {
+  const userId = requireCurrentUserId();
+  const { data, error } = await supabaseClient
+    .from('daily_reviews')
+    .select('*')
+    .eq('user_id', userId)
+    .order('review_date', { ascending: false })
+    .order('updated_at', { ascending: false });
+
+  if (error) throw error;
+  dailyReviews = data.map(mapDailyReviewRow).sort(compareDailyReviewDate);
+  return dailyReviews;
+}
+
+function getDailyReviewForDate(reviewDate) {
+  return dailyReviews.find(review => review.reviewDate === reviewDate) || null;
+}
+
+async function upsertDailyReviewRecord({ reviewDate, content }) {
+  const userId = requireCurrentUserId();
+  const normalizedContent = content.trim();
+  if (!reviewDate || reviewDate > getStorageLocalDateKey()) {
+    throw new Error('不能保存未来日期的复盘');
+  }
+  if (normalizedContent.length < 1 || normalizedContent.length > 3000) {
+    throw new Error('复盘正文需要在 1 到 3000 个字符之间');
+  }
+  const { data, error } = await supabaseClient
+    .from('daily_reviews')
+    .upsert({
+      review_date: reviewDate,
+      content: normalizedContent,
+      user_id: userId,
+    }, { onConflict: 'user_id,review_date' })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapDailyReviewRow(data);
+}
+
+async function deleteDailyReviewRecord(id) {
+  const userId = requireCurrentUserId();
+  const { error } = await supabaseClient
+    .from('daily_reviews')
+    .delete()
+    .eq('id', id)
+    .eq('user_id', userId);
+
+  if (error) throw error;
+}
+
 /** 新增父任务或子任务，并返回服务器生成 ID 后的完整记录。 */
 async function createTodoRecord({ text, parentId = null, categoryId = null, position = 0, plannedDate = null }) {
   const userId = requireCurrentUserId();
@@ -656,6 +731,20 @@ async function subscribeCompletionReviewChanges(userId, onChange) {
     .subscribe();
 }
 
+async function subscribeDailyReviewChanges(userId, onChange) {
+  if (!userId || userId !== currentUserId) {
+    throw new Error('无法为未登录用户订阅今日复盘');
+  }
+
+  await supabaseClient.realtime.setAuth();
+  return supabaseClient
+    .channel(`daily-reviews:${userId}`, { config: { private: true } })
+    .on('broadcast', { event: 'INSERT' }, message => onChange('INSERT', message))
+    .on('broadcast', { event: 'UPDATE' }, message => onChange('UPDATE', message))
+    .on('broadcast', { event: 'DELETE' }, message => onChange('DELETE', message))
+    .subscribe();
+}
+
 function unsubscribeTodoChanges(channel) {
   if (channel) supabaseClient.removeChannel(channel);
 }
@@ -669,5 +758,9 @@ function unsubscribeCompletionGoalChanges(channel) {
 }
 
 function unsubscribeCompletionReviewChanges(channel) {
+  if (channel) supabaseClient.removeChannel(channel);
+}
+
+function unsubscribeDailyReviewChanges(channel) {
   if (channel) supabaseClient.removeChannel(channel);
 }
