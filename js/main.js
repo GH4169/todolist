@@ -145,6 +145,9 @@ let completionReviewTodoId = null;
 let completionReviewEditingId = null;
 let completionReviewReturnFocus = null;
 let completionReviewHistoryLimit = 5;
+let overdueCompletionReviewPromise = null;
+
+const AUTOMATIC_MISSED_REVIEW_CONTENT = '截至次日未评价完成情况，系统自动记为未推进。';
 
 const COMPLETION_REVIEW_RESULTS = {
   achieved: { label: '已达成', className: 'is-achieved' },
@@ -578,6 +581,50 @@ function sortCompletionReviews(reviews = []) {
 
 function getCompletionReviewForDate(item, reviewDate) {
   return item.completionReviews?.find(review => review.reviewDate === reviewDate) || null;
+}
+
+function getOverdueUnreviewedEntries(today = getLocalDateKey()) {
+  return getTaskEntries().filter(({ item }) => (
+    item.plannedDate
+    && item.plannedDate < today
+    && !getCompletionReviewForDate(item, item.plannedDate)
+  ));
+}
+
+async function ensureOverdueCompletionReviews(today = getLocalDateKey()) {
+  if (overdueCompletionReviewPromise) return overdueCompletionReviewPromise;
+
+  const pending = (async () => {
+    const entries = getOverdueUnreviewedEntries(today);
+    if (entries.length === 0) return 0;
+    const expectedUserId = activeUserId;
+
+    const results = await Promise.allSettled(entries.map(async ({ item }) => {
+      const reviewDate = item.plannedDate;
+      const saved = await createCompletionReviewRecordIfAbsent({
+        todoId: item.id,
+        reviewDate,
+        result: 'missed',
+        content: AUTOMATIC_MISSED_REVIEW_CONTENT,
+        goalContentSnapshot: getCompletionGoalForDate(item, reviewDate)?.content || null,
+      });
+      if (saved && activeUserId === expectedUserId) upsertCompletionReviewInMemory(saved);
+      return saved;
+    }));
+
+    const failures = results.filter(result => result.status === 'rejected');
+    if (failures.length > 0) {
+      console.error('自动补记未推进评价失败:', failures.map(result => result.reason));
+    }
+    return results.filter(result => result.status === 'fulfilled' && result.value).length;
+  })();
+  overdueCompletionReviewPromise = pending;
+
+  try {
+    return await pending;
+  } finally {
+    if (overdueCompletionReviewPromise === pending) overdueCompletionReviewPromise = null;
+  }
 }
 
 function getCompletionReviewResultConfig(result) {
@@ -4330,7 +4377,7 @@ document.getElementById('undoMoveBtn').addEventListener('click', async () => {
 // 侧边栏小部件
 // ============================================================
 
-function updateDateTime() {
+async function updateDateTime() {
   const now = new Date();
   const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
   const weekdays = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
@@ -4342,7 +4389,8 @@ function updateDateTime() {
   document.getElementById('weekdayDisplay').textContent = weekdays[now.getDay()];
 
   const nextLocalDateKey = getLocalDateKey(now);
-  if (nextLocalDateKey !== currentLocalDateKey) {
+  const dateChanged = nextLocalDateKey !== currentLocalDateKey;
+  if (dateChanged) {
     currentLocalDateKey = nextLocalDateKey;
     setDailyQuote();
     if (plannedDateDialog.open) {
@@ -4353,7 +4401,11 @@ function updateDateTime() {
         plannedDateNote.textContent = '日期已变化，请重新选择今天或未来的日期。';
       }
     }
-    if (activeUserId) render();
+    if (completionReviewDialog.open) completionReviewDate.max = nextLocalDateKey;
+  }
+  if (activeUserId) {
+    const createdReviewCount = await ensureOverdueCompletionReviews(nextLocalDateKey);
+    if (dateChanged || createdReviewCount > 0) render();
   }
 }
 
@@ -4489,8 +4541,8 @@ function initAppShell() {
   updateDateTime();
   const millisecondsUntilNextMinute = 60000 - (Date.now() % 60000);
   setTimeout(() => {
-    updateDateTime();
-    setInterval(updateDateTime, 60000);
+    void updateDateTime();
+    setInterval(() => void updateDateTime(), 60000);
   }, millisecondsUntilNextMinute);
   initTheme();
 }
@@ -4513,6 +4565,8 @@ async function startTodoApp(user) {
   completedSection.hidden = true;
   try {
     await Promise.all([loadCategories(), loadTodos()]);
+    if (sessionVersion !== appSessionVersion || activeUserId !== user.id) return;
+    await ensureOverdueCompletionReviews();
     if (sessionVersion !== appSessionVersion || activeUserId !== user.id) return;
     restoreCategoryNavigationState(user.id);
     restorePlannedComposerCategory(user.id);
@@ -4548,6 +4602,7 @@ function stopTodoApp() {
   pendingCompletedSubtaskMoves.clear();
   recentLocalCreates.clear();
   recentLocalDeletes.clear();
+  overdueCompletionReviewPromise = null;
   unsubscribeTodoChanges(todoChannel);
   unsubscribeCategoryChanges(categoryChannel);
   unsubscribeCompletionGoalChanges(completionGoalChannel);

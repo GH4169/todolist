@@ -30,6 +30,7 @@ The application is built with HTML, responsive CSS, and modular Vanilla JavaScri
 - Keep active subtasks in focus while completed subtasks sit in a remembered collapsible section inside each active parent task.
 - Schedule parent tasks or subtasks independently for Today or any future date, browse future plans grouped by date in Upcoming, and reschedule unfinished items into Today or a future day.
 - Save date-specific completion goals for parent tasks and subtasks, show the current or nearest relevant goal on each card, and manage goal history from a focused editor.
+- Review daily outcomes for parent tasks and subtasks; scheduled work left unreviewed by the next day is recorded as Not progressed with that day's goal snapshot preserved.
 - Create, reorder, inline-rename, and delete custom groups, then move parent tasks and their subtasks between groups individually or in bulk.
 - Reorder tasks and subtasks with drag and drop so the most important work stays at the top.
 - Start in Today on first use, then return to the most recently opened Today, Tomorrow, Upcoming, or task-group view.

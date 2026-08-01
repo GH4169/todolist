@@ -304,6 +304,45 @@ async function createCompletionReviewRecord({ todoId, reviewDate, result, conten
   return mapCompletionReviewRow(data);
 }
 
+async function createCompletionReviewRecordIfAbsent({
+  todoId,
+  reviewDate,
+  result,
+  content,
+  goalContentSnapshot,
+}) {
+  const userId = requireCurrentUserId();
+  const normalizedGoalContentSnapshot = goalContentSnapshot?.trim() || null;
+  const { data, error } = await supabaseClient
+    .from('todo_completion_reviews')
+    .insert({
+      todo_id: todoId,
+      review_date: reviewDate,
+      result,
+      content: normalizeCompletionReviewContent(content, result, normalizedGoalContentSnapshot),
+      goal_content_snapshot: normalizedGoalContentSnapshot,
+      user_id: userId,
+    })
+    .select()
+    .single();
+
+  // Another signed-in device may have saved the day's review after this client loaded.
+  // In that case the existing manual review must win over the automatic fallback.
+  if (error?.code === '23505') {
+    const { data: existing, error: existingError } = await supabaseClient
+      .from('todo_completion_reviews')
+      .select('*')
+      .eq('todo_id', todoId)
+      .eq('review_date', reviewDate)
+      .eq('user_id', userId)
+      .single();
+    if (existingError) throw existingError;
+    return mapCompletionReviewRow(existing);
+  }
+  if (error) throw error;
+  return mapCompletionReviewRow(data);
+}
+
 async function updateCompletionReviewRecord(id, {
   reviewDate,
   result,
