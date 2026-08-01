@@ -90,6 +90,17 @@ function mapCompletionReviewRow(row) {
   };
 }
 
+// Older deployments may still enforce a non-empty review content constraint.
+// Keep blank achieved reviews valid at the UI level while writing a readable
+// fallback for those databases; the goal snapshot remains the source of truth.
+function normalizeCompletionReviewContent(content, result, goalContentSnapshot) {
+  const normalizedContent = content?.trim() || '';
+  if (normalizedContent || result !== 'achieved' || !goalContentSnapshot?.trim()) {
+    return normalizedContent;
+  }
+  return '已按目标完成';
+}
+
 function compareCompletionReviewDate(a, b) {
   return b.reviewDate.localeCompare(a.reviewDate)
     || (b.updatedAt || 0) - (a.updatedAt || 0);
@@ -275,14 +286,15 @@ async function loadCompletionReviews() {
 
 async function createCompletionReviewRecord({ todoId, reviewDate, result, content, goalContentSnapshot }) {
   const userId = requireCurrentUserId();
+  const normalizedGoalContentSnapshot = goalContentSnapshot?.trim() || null;
   const { data, error } = await supabaseClient
     .from('todo_completion_reviews')
     .insert({
       todo_id: todoId,
       review_date: reviewDate,
       result,
-      content: content.trim(),
-      goal_content_snapshot: goalContentSnapshot?.trim() || null,
+      content: normalizeCompletionReviewContent(content, result, normalizedGoalContentSnapshot),
+      goal_content_snapshot: normalizedGoalContentSnapshot,
       user_id: userId,
     })
     .select()
@@ -300,11 +312,18 @@ async function updateCompletionReviewRecord(id, {
 }) {
   const userId = requireCurrentUserId();
   const changes = {};
+  const normalizedGoalContentSnapshot = goalContentSnapshot?.trim() || null;
   if (reviewDate !== undefined) changes.review_date = reviewDate;
   if (result !== undefined) changes.result = result;
-  if (content !== undefined) changes.content = content.trim();
+  if (content !== undefined) {
+    changes.content = normalizeCompletionReviewContent(
+      content,
+      result,
+      normalizedGoalContentSnapshot,
+    );
+  }
   if (goalContentSnapshot !== undefined) {
-    changes.goal_content_snapshot = goalContentSnapshot?.trim() || null;
+    changes.goal_content_snapshot = normalizedGoalContentSnapshot;
   }
   const { data, error } = await supabaseClient
     .from('todo_completion_reviews')
@@ -337,14 +356,15 @@ async function upsertCompletionReviewForDate({
   goalContentSnapshot,
 }) {
   const userId = requireCurrentUserId();
+  const normalizedGoalContentSnapshot = goalContentSnapshot?.trim() || null;
   const { data, error } = await supabaseClient
     .from('todo_completion_reviews')
     .upsert({
       todo_id: todoId,
       review_date: reviewDate,
       result,
-      content: content.trim(),
-      goal_content_snapshot: goalContentSnapshot?.trim() || null,
+      content: normalizeCompletionReviewContent(content, result, normalizedGoalContentSnapshot),
+      goal_content_snapshot: normalizedGoalContentSnapshot,
       user_id: userId,
     }, { onConflict: 'todo_id,review_date' })
     .select()
