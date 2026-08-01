@@ -31,6 +31,8 @@ const tomorrowTasksNav = document.getElementById('tomorrowTasksNav');
 const newTaskCategorySelect = document.getElementById('newTaskCategorySelect');
 const composerCategory = document.getElementById('composerCategory');
 const composerGoalRow = document.getElementById('composerGoalRow');
+const composerGoalToggle = document.getElementById('composerGoalToggle');
+const composerGoalEditor = document.getElementById('composerGoalEditor');
 const completionGoalInput = document.getElementById('completionGoalInput');
 const completionGoalInputLabel = document.getElementById('completionGoalInputLabel');
 const appRoot = document.getElementById('appView');
@@ -107,6 +109,7 @@ const LATER_CATEGORY_ID = 'later';
 const UNASSIGNED_CATEGORY_ID = 'unassigned';
 let activeCategoryId = TODAY_CATEGORY_ID;
 let plannedComposerCategoryId = null;
+let composerGoalExpanded = false;
 let expandedCategoryIds = new Set();
 let expandedCompletedSubtaskTodoIds = new Set();
 let showTaskTimes = false;
@@ -860,7 +863,8 @@ function syncCategorySelects() {
 function syncComposerCategory() {
   const isCrossCategoryView = isPlannedDateView();
   composerCategory.hidden = !isCrossCategoryView;
-  composerGoalRow.hidden = !isCrossCategoryView;
+  composerGoalToggle.hidden = !isCrossCategoryView;
+  syncComposerGoalExpansion();
   composerPlannedDateRow.hidden = !isLaterView();
   if (isCrossCategoryView && !newTaskCategorySelect.value) newTaskCategorySelect.value = '';
 
@@ -870,8 +874,8 @@ function syncComposerCategory() {
       composerPlannedDate.value = getLocalDateKey(getRelativeLocalDate(2));
     }
     composerPlannedDate.min = todayKey;
-    completionGoalInputLabel.textContent = `${formatGoalDate(composerPlannedDate.value)}完成目标`;
-    completionGoalInput.placeholder = '这一天至少推进到哪里？（可选）';
+    completionGoalInputLabel.firstChild.textContent = `${formatGoalDate(composerPlannedDate.value)}完成目标 `;
+    completionGoalInput.placeholder = '这一天至少推进到哪里？';
   }
 
   const targetName = isCrossCategoryView
@@ -883,9 +887,30 @@ function syncComposerCategory() {
     : `添加到「${targetName}」`;
   if (plannedView && !plannedView.isRange) {
     const dayLabel = isTomorrowView() ? '明日' : '今日';
-    completionGoalInputLabel.textContent = `${dayLabel}完成目标`;
-    completionGoalInput.placeholder = `${plannedView.relativeLabel}至少推进到哪里？（可选）`;
+    completionGoalInputLabel.firstChild.textContent = `${dayLabel}完成目标 `;
+    completionGoalInput.placeholder = `${plannedView.relativeLabel}至少推进到哪里？`;
   }
+  syncComposerGoalExpansion();
+}
+
+function syncComposerGoalExpansion() {
+  if (!composerGoalToggle || !composerGoalEditor) return;
+  const hasContent = Boolean(completionGoalInput.value.trim());
+  const expanded = isPlannedDateView() && composerGoalExpanded;
+  composerGoalRow.hidden = !expanded;
+  composerGoalEditor.hidden = !expanded;
+  composerGoalToggle.setAttribute('aria-expanded', String(expanded));
+  composerGoalToggle.classList.toggle('is-active', expanded || hasContent);
+  const action = expanded ? '收起' : '设定';
+  const goalLabel = completionGoalInputLabel.textContent.trim().replace('（可选）', '');
+  composerGoalToggle.title = `${action}${goalLabel}`;
+  composerGoalToggle.setAttribute('aria-label', `${action}${goalLabel}`);
+}
+
+function setComposerGoalExpanded(expanded, { focus = false } = {}) {
+  composerGoalExpanded = Boolean(expanded);
+  syncComposerGoalExpansion();
+  if (focus && composerGoalExpanded) requestAnimationFrame(() => completionGoalInput.focus());
 }
 
 function setActiveCategory(categoryId) {
@@ -1476,6 +1501,7 @@ async function addTodo() {
     const affectedTodoIds = upsertTodoItem(todo);
     input.value = '';
     completionGoalInput.value = '';
+    setComposerGoalExpanded(false);
     if (plannedView?.isRange) composerPlannedDate.value = getLocalDateKey(getRelativeLocalDate(2));
     input.focus();
     renderChangedTodos(affectedTodoIds);
@@ -3973,6 +3999,9 @@ list.addEventListener('click', (e) => {
 // ============================================================
 
 addBtn.addEventListener('click', addTodo);
+composerGoalToggle.addEventListener('click', () => {
+  setComposerGoalExpanded(!composerGoalExpanded, { focus: !composerGoalExpanded });
+});
 input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.isComposing) {
     e.preventDefault();
@@ -3984,6 +4013,10 @@ completionGoalInput.addEventListener('keydown', (e) => {
     e.preventDefault();
     addTodo();
   }
+});
+completionGoalInput.addEventListener('input', () => {
+  if (completionGoalInput.value.trim()) composerGoalExpanded = true;
+  syncComposerGoalExpansion();
 });
 
 newTaskCategorySelect.addEventListener('change', () => {

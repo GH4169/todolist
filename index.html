@@ -193,6 +193,9 @@
                 <label class="sr-only" for="todoInput">新任务</label>
                 <input type="text" id="todoInput" placeholder="接下来要完成什么？" autocomplete="off" />
               </div>
+              <button class="composer-goal-toggle" id="composerGoalToggle" type="button" title="设定今日完成目标" aria-label="设定今日完成目标" aria-expanded="false" aria-controls="composerGoalRow" hidden>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3M22 12h-3M12 22v-3M2 12h3"/></svg>
+              </button>
               <button class="add-btn" id="addBtn" type="button" title="添加任务" aria-label="添加任务">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
               </button>
@@ -203,9 +206,9 @@
             </div>
             <div class="composer-goal-row" id="composerGoalRow" hidden>
               <span class="composer-goal-marker" aria-hidden="true"></span>
-              <div>
-                <label for="completionGoalInput" id="completionGoalInputLabel">今日完成目标</label>
-                <input type="text" id="completionGoalInput" maxlength="500" autocomplete="off" placeholder="今天至少推进到哪里？（可选）">
+              <div class="composer-goal-editor" id="composerGoalEditor" hidden>
+                <label for="completionGoalInput" id="completionGoalInputLabel">今日完成目标 <span>（可选）</span></label>
+                <input type="text" id="completionGoalInput" maxlength="500" autocomplete="off" placeholder="今天至少推进到哪里？">
               </div>
             </div>
           </div>
