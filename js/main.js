@@ -23,7 +23,9 @@ const activeTaskCount = document.getElementById('activeTaskCount');
 const completedTaskCount = document.getElementById('completedTaskCount');
 const todayTaskCount = document.getElementById('todayTaskCount');
 const tomorrowTaskCount = document.getElementById('tomorrowTaskCount');
+const weekTaskCount = document.getElementById('weekTaskCount');
 const laterTaskCount = document.getElementById('laterTaskCount');
+const weekTasksNav = document.getElementById('weekTasksNav');
 const laterTasksNav = document.getElementById('laterTasksNav');
 const categoryList = document.getElementById('categoryList');
 const todayTasksNav = document.getElementById('todayTasksNav');
@@ -60,6 +62,8 @@ const plannedDateNote = document.getElementById('plannedDateNote');
 const savePlannedDateBtn = document.getElementById('savePlannedDateBtn');
 const composerPlannedDateRow = document.getElementById('composerPlannedDateRow');
 const composerPlannedDate = document.getElementById('composerPlannedDate');
+const weekOverview = document.getElementById('weekOverview');
+const progressLabel = document.getElementById('progressLabel');
 const deleteCategoryDialog = document.getElementById('deleteCategoryDialog');
 const todayCarryover = document.getElementById('todayCarryover');
 const todayCarryoverList = document.getElementById('todayCarryoverList');
@@ -125,8 +129,10 @@ const QUOTE_VISIBLE_STORAGE_PREFIX = 'geek-todos-quote-visible:';
 const ACTIVE_CATEGORY_STORAGE_PREFIX = 'geek-todos-active-category:';
 const EXPANDED_CATEGORIES_STORAGE_PREFIX = 'geek-todos-expanded-categories:';
 const PLANNED_COMPOSER_CATEGORY_STORAGE_PREFIX = 'geek-todos-today-composer-category:';
+const WORK_REVIEW_CONTENT_STORAGE_PREFIX = 'geek-todos-work-review-content:';
 const TODAY_CATEGORY_ID = 'today';
 const TOMORROW_CATEGORY_ID = 'tomorrow';
+const WEEK_CATEGORY_ID = 'week';
 const LATER_CATEGORY_ID = 'later';
 const UNASSIGNED_CATEGORY_ID = 'unassigned';
 let activeCategoryId = TODAY_CATEGORY_ID;
@@ -177,6 +183,7 @@ let dailyReviewReturnFocus = null;
 let dailyReviewHistoryLimit = 5;
 let dailyReviewLoadedUpdatedAt = null;
 let overdueCompletionReviewPromise = null;
+let workReviewOpenExpanded = false;
 
 const AUTOMATIC_MISSED_REVIEW_CONTENT = '截至次日未评价完成情况，系统自动记为未推进。';
 
@@ -286,7 +293,7 @@ function loadExpandedCategories(userId) {
 }
 
 function isValidCategoryId(categoryId) {
-  if (categoryId === TODAY_CATEGORY_ID || categoryId === TOMORROW_CATEGORY_ID || categoryId === LATER_CATEGORY_ID) return true;
+  if (categoryId === TODAY_CATEGORY_ID || categoryId === TOMORROW_CATEGORY_ID || categoryId === WEEK_CATEGORY_ID || categoryId === LATER_CATEGORY_ID) return true;
   if (categoryId === UNASSIGNED_CATEGORY_ID) return todos.some(todo => !todo.categoryId);
   return Boolean(getCategoryById(categoryId));
 }
@@ -541,6 +548,59 @@ function getRelativeLocalDate(offset = 0, baseDate = new Date()) {
   );
 }
 
+function getCurrentWeekRange(baseDate = new Date()) {
+  const mondayOffset = (baseDate.getDay() + 6) % 7;
+  const startDate = getRelativeLocalDate(-mondayOffset, baseDate);
+  const endDate = getRelativeLocalDate(6 - mondayOffset, baseDate);
+  return {
+    startDate,
+    endDate,
+    startKey: getLocalDateKey(startDate),
+    endKey: getLocalDateKey(endDate),
+  };
+}
+
+function getRecentReviewRange(baseDate = new Date()) {
+  const endDate = getRelativeLocalDate(0, baseDate);
+  const startDate = getRelativeLocalDate(-6, baseDate);
+  return {
+    startDate,
+    endDate,
+    startKey: getLocalDateKey(startDate),
+    endKey: getLocalDateKey(endDate),
+  };
+}
+
+function getWeekDays(baseDate = new Date()) {
+  const { startDate } = getCurrentWeekRange(baseDate);
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = getRelativeLocalDate(index, startDate);
+    return { date, dateKey: getLocalDateKey(date) };
+  });
+}
+
+function formatWeekRangeLabel(baseDate = new Date()) {
+  const { startDate, endDate } = getCurrentWeekRange(baseDate);
+  if (startDate.getFullYear() !== endDate.getFullYear()) {
+    return `${startDate.getFullYear()}年${formatShortDate(startDate)} - ${endDate.getFullYear()}年${formatShortDate(endDate)}`;
+  }
+  if (startDate.getMonth() !== endDate.getMonth()) {
+    return `${formatShortDate(startDate)} - ${formatShortDate(endDate)}`;
+  }
+  return `${startDate.getMonth() + 1}月${startDate.getDate()}日 - ${endDate.getDate()}日`;
+}
+
+function formatRecentReviewRangeLabel(baseDate = new Date()) {
+  const { startDate, endDate } = getRecentReviewRange(baseDate);
+  if (startDate.getFullYear() !== endDate.getFullYear()) {
+    return `${startDate.getFullYear()}年${formatShortDate(startDate)} - ${endDate.getFullYear()}年${formatShortDate(endDate)}`;
+  }
+  if (startDate.getMonth() !== endDate.getMonth()) {
+    return `${formatShortDate(startDate)} - ${formatShortDate(endDate)}`;
+  }
+  return `${startDate.getMonth() + 1}月${startDate.getDate()}日 - ${endDate.getDate()}日`;
+}
+
 function formatDateHeading(date) {
   const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
   return `${date.getMonth() + 1}月${date.getDate()}日 · ${weekdays[date.getDay()]}`;
@@ -732,6 +792,7 @@ function removeCompletionReviewFromMemory(reviewId, todoId = null) {
 function getPlannedViewConfig(categoryId = activeCategoryId, baseDate = new Date()) {
   const configs = {
     [TODAY_CATEGORY_ID]: {
+      kind: 'single',
       offset: 0,
       title: '今日待办',
       relativeLabel: '今天',
@@ -740,6 +801,7 @@ function getPlannedViewConfig(categoryId = activeCategoryId, baseDate = new Date
       emptyHint: '先安排一件最重要的事',
     },
     [TOMORROW_CATEGORY_ID]: {
+      kind: 'single',
       offset: 1,
       title: '明日待办',
       relativeLabel: '明天',
@@ -747,7 +809,16 @@ function getPlannedViewConfig(categoryId = activeCategoryId, baseDate = new Date
       clearedTitle: '明日进行中已经清空',
       emptyHint: '给明天留下一件重要的事',
     },
+    [WEEK_CATEGORY_ID]: {
+      kind: 'week',
+      title: '近期复盘',
+      relativeLabel: '最近 7 天',
+      emptyTitle: '最近 7 天还没有留下可回看的记录',
+      clearedTitle: '最近 7 天还没有留下可回看的记录',
+      emptyHint: '先从今日复盘写下一两句，之后这里会按日期形成工作轨迹。',
+    },
     [LATER_CATEGORY_ID]: {
+      kind: 'range',
       title: '后续待办',
       relativeLabel: '后续',
       emptyTitle: '还没有后续安排',
@@ -758,6 +829,9 @@ function getPlannedViewConfig(categoryId = activeCategoryId, baseDate = new Date
   };
   const config = configs[categoryId];
   if (!config) return null;
+  if (config.kind === 'week') {
+    return { ...config, categoryId, ...getRecentReviewRange(baseDate) };
+  }
   if (config.isRange) {
     return {
       ...config,
@@ -791,8 +865,117 @@ function getTomorrowEntries() {
 
 function getActivePlannedEntries() {
   const view = getPlannedViewConfig();
+  if (view?.kind === 'week') return getWeekEntries();
   if (view?.isRange) return getLaterEntries();
   return getPlannedEntries(view?.dateKey);
+}
+
+function getWeekEntries(baseDate = new Date()) {
+  const { startKey, endKey } = getRecentReviewRange(baseDate);
+  return getTaskEntries()
+    .filter(({ item }) => (
+      item.plannedDate
+      && item.plannedDate >= startKey
+      && item.plannedDate <= endKey
+    ))
+    .sort((a, b) => (
+      a.item.plannedDate.localeCompare(b.item.plannedDate)
+      || compareTodoOrder(a.item, b.item)
+    ));
+}
+
+function isDateInRange(dateKey, range) {
+  return Boolean(dateKey && dateKey >= range.startKey && dateKey <= range.endKey);
+}
+
+function getRecentReviewEvidence(range = getRecentReviewRange()) {
+  const days = new Map();
+  const ensureDay = dateKey => {
+    if (!days.has(dateKey)) {
+      const [year, month, day] = dateKey.split('-').map(Number);
+      days.set(dateKey, {
+        dateKey,
+        date: new Date(year, month - 1, day, 12),
+        dailyReview: null,
+        completed: [],
+        reviews: [],
+      });
+    }
+    return days.get(dateKey);
+  };
+
+  dailyReviews.filter(review => isDateInRange(review.reviewDate, range)).forEach(review => {
+    ensureDay(review.reviewDate).dailyReview = review;
+  });
+
+  getTaskEntries().forEach(entry => {
+    const { item } = entry;
+    if (item.completedAt) {
+      const completedDate = getLocalDateKey(new Date(item.completedAt));
+      if (isDateInRange(completedDate, range)) ensureDay(completedDate).completed.push(entry);
+    }
+    (item.completionReviews || []).forEach(review => {
+      if (isDateInRange(review.reviewDate, range)) ensureDay(review.reviewDate).reviews.push({ ...entry, review });
+    });
+  });
+
+  return [...days.values()].sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+}
+
+function getRecentReviewOpenItems(range = getRecentReviewRange()) {
+  const today = getLocalDateKey();
+  const reviewByTodo = new Map();
+  const unresolvedReviewIds = new Set();
+  getTaskEntries().forEach(entry => {
+    (entry.item.completionReviews || []).forEach(review => {
+      if (isDateInRange(review.reviewDate, range)) {
+        const current = reviewByTodo.get(entry.item.id);
+        if (!current || review.reviewDate > current.review.reviewDate) reviewByTodo.set(entry.item.id, { ...entry, review });
+        if (['partial', 'missed'].includes(review.result)) unresolvedReviewIds.add(entry.item.id);
+      }
+    });
+  });
+
+  return getTaskEntries()
+    .filter(entry => {
+      const { item } = entry;
+      const inPlan = item.plannedDate && item.plannedDate <= today && item.plannedDate >= range.startKey;
+      const overdue = item.plannedDate && item.plannedDate < today;
+      const review = reviewByTodo.get(item.id)?.review;
+      const reviewedOpen = unresolvedReviewIds.has(item.id);
+      return !item.done && (inPlan || overdue || reviewedOpen);
+    })
+    .map(entry => ({ ...entry, recentReview: reviewByTodo.get(entry.item.id)?.review || null }))
+    .sort((a, b) => {
+      const resultWeight = entry => entry.recentReview?.result === 'missed' ? 0 : entry.recentReview?.result === 'partial' ? 1 : 2;
+      return resultWeight(a) - resultWeight(b)
+        || (b.recentReview?.reviewDate || '').localeCompare(a.recentReview?.reviewDate || '')
+        || (b.item.plannedDate || '').localeCompare(a.item.plannedDate || '')
+        || compareTodoOrder(a.item, b.item);
+    });
+}
+
+function getWorkReviewContent(range = getRecentReviewRange()) {
+  if (!activeUserId) return '';
+  return getSavedString(`${WORK_REVIEW_CONTENT_STORAGE_PREFIX}${range.startKey}:${range.endKey}:`, activeUserId, '') || '';
+}
+
+function saveWorkReviewContent(range, content) {
+  if (!activeUserId) return;
+  try {
+    localStorage.setItem(`${WORK_REVIEW_CONTENT_STORAGE_PREFIX}${range.startKey}:${range.endKey}:${activeUserId}`, content);
+  } catch (error) {
+    console.warn('保存复盘结论失败:', error);
+  }
+}
+
+function getWeekDayStats(entries = getWeekEntries()) {
+  const stats = new Map(getWeekDays().map(({ dateKey }) => [dateKey, { active: 0, done: 0 }]));
+  entries.forEach(({ item }) => {
+    const day = stats.get(item.plannedDate);
+    if (day) day[item.done ? 'done' : 'active'] += 1;
+  });
+  return stats;
 }
 
 function getLaterEntries(baseDate = new Date()) {
@@ -875,6 +1058,10 @@ function isLaterView() {
   return activeCategoryId === LATER_CATEGORY_ID;
 }
 
+function isWeekView() {
+  return activeCategoryId === WEEK_CATEGORY_ID;
+}
+
 function isPlannedDateView() {
   return Boolean(getPlannedViewConfig());
 }
@@ -882,6 +1069,12 @@ function isPlannedDateView() {
 function matchesCategory(todo, categoryId = activeCategoryId) {
   const plannedView = getPlannedViewConfig(categoryId);
   if (plannedView) {
+    if (plannedView.kind === 'week') {
+      const matchesWeek = item => item.plannedDate
+        && item.plannedDate >= plannedView.startKey
+        && item.plannedDate <= plannedView.endKey;
+      return matchesWeek(todo) || todo.subtasks.some(matchesWeek);
+    }
     if (plannedView.isRange) {
       return todo.plannedDate > plannedView.tomorrowKey
         || todo.subtasks.some(item => item.plannedDate > plannedView.tomorrowKey);
@@ -930,7 +1123,8 @@ function syncComposerCategory() {
   composerCategory.hidden = !isCrossCategoryView;
   composerGoalToggle.hidden = !isCrossCategoryView;
   syncComposerGoalExpansion();
-  composerPlannedDateRow.hidden = !isLaterView();
+  const usesComposerDate = isLaterView() || isWeekView();
+  composerPlannedDateRow.hidden = !usesComposerDate;
   if (isCrossCategoryView && !newTaskCategorySelect.value) newTaskCategorySelect.value = '';
 
   if (isLaterView()) {
@@ -939,6 +1133,17 @@ function syncComposerCategory() {
       composerPlannedDate.value = getLocalDateKey(getRelativeLocalDate(2));
     }
     composerPlannedDate.min = todayKey;
+    composerPlannedDate.removeAttribute('max');
+    completionGoalInputLabel.firstChild.textContent = `${formatGoalDate(composerPlannedDate.value)}完成目标 `;
+    completionGoalInput.placeholder = '这一天至少推进到哪里？';
+  } else if (isWeekView()) {
+    const todayKey = getLocalDateKey();
+    const { endKey } = getRecentReviewRange();
+    if (!isSelectablePlannedDate(composerPlannedDate.value, todayKey) || composerPlannedDate.value > endKey) {
+      composerPlannedDate.value = todayKey;
+    }
+    composerPlannedDate.min = todayKey;
+    composerPlannedDate.max = endKey;
     completionGoalInputLabel.firstChild.textContent = `${formatGoalDate(composerPlannedDate.value)}完成目标 `;
     completionGoalInput.placeholder = '这一天至少推进到哪里？';
   }
@@ -950,7 +1155,7 @@ function syncComposerCategory() {
   input.placeholder = plannedView
     ? `添加到「${targetName}」并安排${plannedView.relativeLabel}`
     : `添加到「${targetName}」`;
-  if (plannedView && !plannedView.isRange) {
+  if (plannedView?.kind === 'single') {
     const dayLabel = isTomorrowView() ? '明日' : '今日';
     completionGoalInputLabel.firstChild.textContent = `${dayLabel}完成目标 `;
     completionGoalInput.placeholder = `${plannedView.relativeLabel}至少推进到哪里？`;
@@ -981,6 +1186,7 @@ function setComposerGoalExpanded(expanded, { focus = false } = {}) {
 function setActiveCategory(categoryId) {
   const validId = categoryId === TODAY_CATEGORY_ID
     || categoryId === TOMORROW_CATEGORY_ID
+    || categoryId === WEEK_CATEGORY_ID
     || categoryId === LATER_CATEGORY_ID
     || categoryId === UNASSIGNED_CATEGORY_ID
     || Boolean(getCategoryById(categoryId));
@@ -1075,10 +1281,13 @@ function renderCategoryNavigation() {
   todayTasksNav.toggleAttribute('aria-current', activeCategoryId === TODAY_CATEGORY_ID);
   tomorrowTasksNav.classList.toggle('active', activeCategoryId === TOMORROW_CATEGORY_ID);
   tomorrowTasksNav.toggleAttribute('aria-current', activeCategoryId === TOMORROW_CATEGORY_ID);
+  weekTasksNav.classList.toggle('active', activeCategoryId === WEEK_CATEGORY_ID);
+  weekTasksNav.toggleAttribute('aria-current', activeCategoryId === WEEK_CATEGORY_ID);
   laterTasksNav.classList.toggle('active', activeCategoryId === LATER_CATEGORY_ID);
   laterTasksNav.toggleAttribute('aria-current', activeCategoryId === LATER_CATEGORY_ID);
   todayTaskCount.textContent = getTodayEntries().filter(({ item }) => !item.done).length;
   tomorrowTaskCount.textContent = getTomorrowEntries().filter(({ item }) => !item.done).length;
+  weekTaskCount.textContent = getRecentReviewOpenItems().length;
   laterTaskCount.textContent = getLaterEntries().filter(({ item }) => !item.done).length;
   syncCategorySelects();
 }
@@ -1527,14 +1736,22 @@ function syncDescriptionDom(todoId, subId) {
 }
 
 async function addTodo() {
+  if (isWeekView()) {
+    showToast('近期复盘只用于回看记录，请回到任务视图添加事项');
+    return;
+  }
   const text = input.value.trim();
   if (!text) return;
   const plannedView = getPlannedViewConfig();
-  const plannedDate = plannedView?.isRange
+  const plannedDate = plannedView && plannedView.kind !== 'single'
     ? composerPlannedDate.value
     : plannedView?.dateKey || null;
-  if (plannedView?.isRange && !isSelectablePlannedDate(plannedDate)) {
-    showToast('请选择今天或未来日期');
+  const invalidComposerDate = plannedView && plannedView.kind !== 'single' && (
+    !isSelectablePlannedDate(plannedDate)
+    || (plannedView.kind === 'week' && plannedDate > plannedView.endKey)
+  );
+  if (invalidComposerDate) {
+    showToast(plannedView.kind === 'week' ? '请选择最近 7 天内的日期' : '请选择今天或未来日期');
     composerPlannedDate.focus();
     return;
   }
@@ -1570,6 +1787,9 @@ async function addTodo() {
     if (plannedView?.isRange) composerPlannedDate.value = getLocalDateKey(getRelativeLocalDate(2));
     input.focus();
     renderChangedTodos(affectedTodoIds);
+    if (plannedView?.kind === 'week') {
+      requestAnimationFrame(() => scrollToWeekDate(plannedDate));
+    }
     await saveParentTodoPositions(updateTodoWithRealtimeEcho);
   } catch (error) {
     await restoreCloudState(error);
@@ -2107,6 +2327,11 @@ function startEditDescription(todoId, subId, { isNewDescription = false } = {}) 
 // ============================================================
 
 function updateProgress() {
+  if (isWeekView()) {
+    progressCircle.style.strokeDashoffset = circumference;
+    percentText.textContent = '—';
+    return;
+  }
   if (isPlannedDateView()) {
     const entries = getActivePlannedEntries();
     const completedCount = entries.filter(({ item }) => item.done).length;
@@ -2141,10 +2366,23 @@ function updateProgress() {
 }
 
 function updateSideStats() {
+  if (isWeekView()) {
+    const range = getRecentReviewRange();
+    const days = getRecentReviewEvidence(range);
+    const completed = days.reduce((sum, day) => sum + day.completed.length, 0);
+    const openItems = getRecentReviewOpenItems(range);
+    workspaceSummary.textContent = `${days.length} 个有记录的工作日 · ${completed} 条完成记录 · ${openItems.length} 项未收口`;
+    return;
+  }
   if (isPlannedDateView()) {
     const entries = getActivePlannedEntries();
     const done = entries.filter(({ item }) => item.done).length;
-    workspaceSummary.textContent = `${entries.length - done} 项进行中 · ${done} 项已完成`;
+    if (isWeekView()) {
+      const scheduledDays = new Set(entries.map(({ item }) => item.plannedDate)).size;
+      workspaceSummary.textContent = `${entries.length - done} 项待处理 · ${done} 项已完成 · 安排在 ${scheduledDays} 天`;
+    } else {
+      workspaceSummary.textContent = `${entries.length - done} 项进行中 · ${done} 项已完成`;
+    }
     return;
   }
 
@@ -2265,14 +2503,15 @@ function renderDatePlanButton(item, { subtask = false } = {}) {
 }
 
 function renderCompletionGoalBlock(item, { plannedView = getPlannedViewConfig() } = {}) {
-  const contextDate = plannedView?.isRange ? item.plannedDate : plannedView?.dateKey || null;
+  const isMultiDateView = plannedView && plannedView.kind !== 'single';
+  const contextDate = isMultiDateView ? item.plannedDate : plannedView?.dateKey || null;
   const projection = getGoalProjection(item, contextDate);
   if (!plannedView && !projection.goal) return '';
 
   const targetDate = projection.state === 'carried'
     ? contextDate
     : (projection.goal?.targetDate || contextDate || item.plannedDate || getLocalDateKey());
-  const relativeLabel = plannedView?.isRange
+  const relativeLabel = isMultiDateView
     ? formatGoalDate(contextDate)
     : isTomorrowView() ? '明日' : '今日';
   const label = projection.state === 'exact'
@@ -2282,7 +2521,7 @@ function renderCompletionGoalBlock(item, { plannedView = getPlannedViewConfig() 
       : projection.state === 'latest'
         ? `完成目标 · ${formatGoalDate(projection.goal.targetDate)}`
         : `设定${relativeLabel}完成目标`;
-  const content = projection.goal?.content || `${plannedView?.isRange ? formatGoalDate(contextDate) : plannedView.relativeLabel}至少推进到哪里？`;
+  const content = projection.goal?.content || `${isMultiDateView ? formatGoalDate(contextDate) : plannedView.relativeLabel}至少推进到哪里？`;
   const carriedAction = projection.state === 'carried'
     ? `<span class="completion-goal-update">更新${relativeLabel}目标</span>`
     : '';
@@ -2314,15 +2553,18 @@ function renderCompletionGoalAction(item, { subtask = false } = {}) {
 }
 
 function renderCompletionReviewBlock(item) {
-  if (!isTodayView()) return '';
   const today = getLocalDateKey();
-  const review = getCompletionReviewForDate(item, today);
+  if (!isTodayView() && !isWeekView()) return '';
+  const contextDate = isWeekView() ? item.plannedDate : today;
+  if (!contextDate || contextDate > today) return '';
+  const dateLabel = contextDate === today ? '今日' : formatGoalDate(contextDate);
+  const review = getCompletionReviewForDate(item, contextDate);
   if (!review) {
     return `
-      <button class="completion-review-block is-missing" type="button" data-action="open-completion-review" data-id="${item.id}" data-review-date="${today}" aria-label="评价“${escapeHtml(item.text)}”的今日完成情况">
+      <button class="completion-review-block is-missing" type="button" data-action="open-completion-review" data-id="${item.id}" data-review-date="${contextDate}" aria-label="评价“${escapeHtml(item.text)}”的${dateLabel}完成情况">
         <span class="completion-review-mark" aria-hidden="true">○</span>
         <span class="completion-review-copy">
-          <span class="completion-review-heading">评价今日完成情况</span>
+          <span class="completion-review-heading">评价${dateLabel}完成情况</span>
           <span class="completion-review-content">写下实际做到哪里</span>
         </span>
       </button>`;
@@ -2331,10 +2573,10 @@ function renderCompletionReviewBlock(item) {
   const resultConfig = getCompletionReviewResultConfig(review.result);
   const reviewContent = review.content || '已按目标完成';
   return `
-    <button class="completion-review-block ${resultConfig.className}" type="button" data-action="open-completion-review" data-id="${item.id}" data-review-date="${today}" data-review-id="${review.id}" aria-label="编辑“${escapeHtml(item.text)}”的今日完成评价：${resultConfig.label}">
+    <button class="completion-review-block ${resultConfig.className}" type="button" data-action="open-completion-review" data-id="${item.id}" data-review-date="${contextDate}" data-review-id="${review.id}" aria-label="编辑“${escapeHtml(item.text)}”的${dateLabel}完成评价：${resultConfig.label}">
       <span class="completion-review-mark" aria-hidden="true">✓</span>
       <span class="completion-review-copy">
-        <span class="completion-review-heading">今日完成评价 <em>· ${resultConfig.label}</em></span>
+        <span class="completion-review-heading">${dateLabel}完成评价 <em>· ${resultConfig.label}</em></span>
         <span class="completion-review-content">${escapeHtml(reviewContent)}</span>
       </span>
     </button>`;
@@ -2343,17 +2585,20 @@ function renderCompletionReviewBlock(item) {
 function renderCompletionReviewAction(item, { subtask = false } = {}) {
   if (isTomorrowView() || isLaterView()) return '';
   const today = getLocalDateKey();
-  const review = getCompletionReviewForDate(item, today);
+  const contextDate = isWeekView() ? item.plannedDate : today;
+  if (!contextDate || contextDate > today) return '';
+  const dateLabel = contextDate === today ? '今日' : formatGoalDate(contextDate);
+  const review = getCompletionReviewForDate(item, contextDate);
   const resultConfig = review ? getCompletionReviewResultConfig(review.result) : null;
   const classes = subtask
     ? `subtask-review-btn ${resultConfig?.className || ''}`
     : `action-btn completion-review-action ${resultConfig?.className || ''}`;
   const title = review ? `完成评价：${resultConfig.label}` : '完成评价';
   const ariaLabel = review
-    ? `编辑“${item.text}”的今日完成评价：${resultConfig.label}`
-    : `填写“${item.text}”的今日完成评价`;
+    ? `编辑“${item.text}”的${dateLabel}完成评价：${resultConfig.label}`
+    : `填写“${item.text}”的${dateLabel}完成评价`;
   return `
-    <button class="${classes}" type="button" data-action="open-completion-review" data-id="${item.id}" data-review-date="${today}" ${review ? `data-review-id="${review.id}"` : ''} title="${title}" aria-label="${escapeHtml(ariaLabel)}">
+    <button class="${classes}" type="button" data-action="open-completion-review" data-id="${item.id}" data-review-date="${contextDate}" ${review ? `data-review-id="${review.id}"` : ''} title="${title}" aria-label="${escapeHtml(ariaLabel)}">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 9h8M8 13h5"/><path d="m13 17 2 2 4-5"/></svg>
     </button>`;
 }
@@ -2567,6 +2812,127 @@ function renderLaterGroups(entries) {
     ${groupEntries.map(renderLaterEntryHtml).join('')}`).join('');
 }
 
+function renderWeekGroups(entries) {
+  const todayKey = getLocalDateKey();
+  return groupEntriesByPlannedDate(entries).map(([dateKey, groupEntries]) => {
+    const isToday = dateKey === todayKey;
+    const isOverdue = dateKey < todayKey && groupEntries.some(({ item }) => !item.done);
+    const statusLabel = isToday ? '今天' : isOverdue ? '已过期' : '';
+    const heading = `${formatPlannedDateLabel(dateKey)}${statusLabel ? ` · ${statusLabel}` : ''}`;
+    return `
+      <li class="later-date-heading week-date-heading ${isToday ? 'is-today' : ''} ${isOverdue ? 'is-overdue' : ''}" data-planned-date="${dateKey}" data-week-date-group="${dateKey}" aria-label="${escapeHtml(heading.replaceAll(' · ', '，'))}，${groupEntries.length} 项任务">
+        <h2>${escapeHtml(heading)}</h2>
+        <span>${groupEntries.length}</span>
+      </li>
+      ${groupEntries.map(renderLaterEntryHtml).join('')}`;
+  }).join('');
+}
+
+function renderReviewTaskButton(entry, label, extra = '') {
+  const { item, todo, isSubtask } = entry;
+  return `<button class="work-review-task" type="button" data-review-task-id="${item.id}" data-review-parent-id="${todo.id}" data-review-subtask="${isSubtask}" ${extra}>
+    <span class="work-review-task-mark" aria-hidden="true"></span>
+    <span class="work-review-task-copy"><strong>${escapeHtml(item.text)}</strong><small>${escapeHtml(label)}${isSubtask ? ` · 子任务 · ${escapeHtml(todo.text)}` : ''}</small></span>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+  </button>`;
+}
+
+function renderRecentReviewDay(day) {
+  const review = day.dailyReview;
+  const evidenceCount = day.completed.length + day.reviews.length;
+  const parentCompletedIds = new Set(day.completed.filter(entry => !entry.isSubtask).map(entry => entry.item.id));
+  const visibleCompleted = day.completed.filter(entry => !entry.isSubtask || !parentCompletedIds.has(entry.todo.id));
+  return `<article class="work-review-day" aria-labelledby="work-review-day-${day.dateKey}">
+    <div class="work-review-date-marker">
+      <span>${escapeHtml(formatShortDate(day.date))}</span>
+      <strong id="work-review-day-${day.dateKey}">${day.dateKey === getLocalDateKey() ? '今天' : escapeHtml(formatDateHeading(day.date).split(' · ')[1])}</strong>
+    </div>
+    <div class="work-review-day-body">
+      <div class="work-review-day-heading"><h3>${escapeHtml(formatDateHeading(day.date).split(' · ')[0])}</h3><span>${evidenceCount + (review ? 1 : 0)} 条记录</span></div>
+      ${review
+        ? `<button class="work-review-journal" type="button" data-review-daily-date="${day.dateKey}" aria-label="${day.dateKey === getLocalDateKey() ? '编辑' : '查看'}${escapeHtml(formatDailyReviewDate(day.dateKey))}的复盘">
+            <span class="work-review-evidence-label">每日复盘</span><p>${escapeHtml(review.content)}</p><small>${day.dateKey === getLocalDateKey() ? '编辑今日复盘' : '查看这天的复盘'}</small>
+          </button>`
+        : (evidenceCount > 0 ? '<p class="work-review-no-journal">有任务记录，尚未写日级复盘</p>' : '')}
+      ${day.completed.length > 0 ? `<div class="work-review-evidence-group"><span class="work-review-evidence-label is-complete">完成记录 · ${day.completed.length}</span>${visibleCompleted.map(entry => {
+        const childCount = entry.isSubtask ? 0 : day.completed.filter(candidate => candidate.isSubtask && candidate.todo.id === entry.item.id).length;
+        const suffix = childCount > 0 ? ` · 完成的子任务 ${childCount} 项` : '';
+        return renderReviewTaskButton(entry, `完成于 ${formatGoalDate(day.dateKey)}${suffix}`, 'data-review-evidence="completed"');
+      }).join('')}</div>` : ''}
+      ${day.reviews.length > 0 ? `<div class="work-review-evidence-group"><span class="work-review-evidence-label is-review">任务评价 · ${day.reviews.length}</span>${day.reviews.map(entry => {
+        const result = getCompletionReviewResultConfig(entry.review.result);
+        return renderReviewTaskButton(entry, `${result.label}${entry.review.content ? ` · ${entry.review.content}` : ''}`, `data-review-evidence="review" data-review-date="${entry.review.reviewDate}" data-review-id="${entry.review.id}"`);
+      }).join('')}</div>` : ''}
+    </div>
+  </article>`;
+}
+
+function renderRecentWorkReview() {
+  const range = getRecentReviewRange();
+  const days = getRecentReviewEvidence(range);
+  const openItems = getRecentReviewOpenItems(range);
+  const completedCount = days.reduce((sum, day) => sum + day.completed.length, 0);
+  const workDays = days.length;
+  const reviewContent = getWorkReviewContent(range);
+  const dayMarkup = days.length > 0
+    ? days.map(renderRecentReviewDay).join('')
+    : `<div class="work-review-empty"><strong>最近 7 天还没有留下可回看的记录</strong><p>先从今日复盘写下一两句，之后这里会按日期形成工作轨迹。</p><button type="button" data-review-daily-date="${getLocalDateKey()}">写今日复盘</button></div>`;
+
+  weekOverview.innerHTML = `
+    <div class="work-review-header">
+      <div><span class="work-review-kicker">近期记录</span><h2>最近 7 天的记录</h2><p>${escapeHtml(formatRecentReviewRangeLabel(range.endDate))}</p></div>
+      <div class="work-review-facts" aria-label="复盘摘要"><span><b>${workDays}</b>有记录的日期</span><span><b>${completedCount}</b>完成记录</span><span><b>${openItems.length}</b>未收口</span></div>
+    </div>
+    <section class="work-review-section" aria-labelledby="work-review-evidence-title"><div class="work-review-section-heading"><h2 id="work-review-evidence-title">实际发生</h2><span>按日期回看</span></div><div class="work-review-timeline">${dayMarkup}</div></section>
+    <section class="work-review-section work-review-open" aria-labelledby="work-review-open-title"><div class="work-review-section-heading"><h2 id="work-review-open-title">还没收口 <span>${openItems.length}</span></h2><span>继续处理或回到任务</span></div>${openItems.length > 0 ? `<div class="work-review-open-list">${openItems.slice(0, workReviewOpenExpanded ? openItems.length : 5).map(entry => {
+      const label = entry.recentReview ? `${getCompletionReviewResultConfig(entry.recentReview.result).label}${entry.recentReview.content ? ` · ${entry.recentReview.content}` : ''}` : `原安排 ${formatGoalDate(entry.item.plannedDate)}`;
+      return renderReviewTaskButton(entry, label, `data-review-open="true" data-review-date="${entry.recentReview?.reviewDate || ''}" data-review-id="${entry.recentReview?.id || ''}"`);
+    }).join('')}</div>${openItems.length > 5 && !workReviewOpenExpanded ? `<button class="work-review-more" type="button" data-review-open-more>查看其余 ${openItems.length - 5} 项</button>` : ''}` : '<p class="work-review-section-empty">这段时间没有留下需要继续处理的事项。</p>'}</section>
+    <section class="work-review-section work-review-conclusion" aria-labelledby="work-review-conclusion-title"><div class="work-review-section-heading"><h2 id="work-review-conclusion-title">复盘结论</h2><span>可选</span></div><label class="sr-only" for="workReviewConclusion">复盘结论</label><textarea id="workReviewConclusion" maxlength="3000" placeholder="这段时间最重要的产出是什么？\n哪些阻塞或计划外工作值得记住？\n下一段工作准备保留、停止或调整什么？">${escapeHtml(reviewContent)}</textarea><div class="work-review-conclusion-actions"><span id="workReviewSaveStatus" role="status" aria-live="polite"></span><button type="button" data-review-save>保存结论</button></div></section>`;
+}
+
+function renderWeekOverview() {
+  weekOverview.hidden = !isWeekView();
+  if (weekOverview.hidden) {
+    weekOverview.innerHTML = '';
+    return;
+  }
+  renderRecentWorkReview();
+}
+
+function scrollToWeekDate(dateKey) {
+  let target = activeList.querySelector(`[data-week-date-group="${dateKey}"]`);
+  if (!target) {
+    target = completedList.querySelector(`[data-week-date-group="${dateKey}"]`);
+    if (target && !completedExpanded) setCompletedExpanded(true, { persist: true });
+  }
+  if (!target) return false;
+
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  target.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' });
+  target.classList.add('is-targeted');
+  setTimeout(() => target.isConnected && target.classList.remove('is-targeted'), 1100);
+  return true;
+}
+
+function selectWeekDate(dateKey) {
+  if (!isWeekView()) return;
+  const todayKey = getLocalDateKey();
+  if (dateKey >= todayKey) {
+    composerPlannedDate.value = dateKey;
+    syncComposerCategory();
+  }
+  if (scrollToWeekDate(dateKey)) return;
+
+  if (dateKey < todayKey) {
+    showToast(`${formatGoalDate(dateKey)}没有安排`);
+    return;
+  }
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  composerPlannedDateRow.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' });
+  composerPlannedDate.focus({ preventScroll: true });
+}
+
 function renderCarryover() {
   const entries = getCarryoverEntries();
   todayCarryover.hidden = !isTodayView() || entries.length === 0;
@@ -2604,12 +2970,26 @@ function getTodoElement(id) {
 }
 
 function updateListSummary() {
+  if (isWeekView()) {
+    const range = getRecentReviewRange();
+    const days = getRecentReviewEvidence(range);
+    const openItems = getRecentReviewOpenItems(range);
+    countText.textContent = `${days.length} 个有记录的工作日 · ${openItems.length} 项未收口`;
+    activeTaskCount.textContent = days.length;
+    completedTaskCount.textContent = days.reduce((sum, day) => sum + day.completed.length, 0);
+    clearBtn.style.display = 'none';
+    clearBtn.title = '复盘页不清除任务';
+    clearBtn.setAttribute('aria-label', '复盘页不清除任务');
+    updateProgress();
+    updateSideStats();
+    return;
+  }
   const plannedView = getPlannedViewConfig();
   if (plannedView) {
     const entries = getActivePlannedEntries();
     const activeCountValue = entries.filter(({ item }) => !item.done).length;
     const completedCountValue = entries.length - activeCountValue;
-    const viewLabel = plannedView.title.replace('待办', '');
+    const viewLabel = plannedView.kind === 'week' ? '本周' : plannedView.title.replace('待办', '');
     countText.textContent = entries.length === 0
       ? `${viewLabel}暂无安排`
       : `${viewLabel}进行中 ${activeCountValue} · 共 ${entries.length} 项`;
@@ -2644,6 +3024,7 @@ function render() {
   let activeCategoryChanged = false;
   if (activeCategoryId !== TODAY_CATEGORY_ID
     && activeCategoryId !== TOMORROW_CATEGORY_ID
+    && activeCategoryId !== WEEK_CATEGORY_ID
     && activeCategoryId !== LATER_CATEGORY_ID
     && activeCategoryId !== UNASSIGNED_CATEGORY_ID
     && !getCategoryById(activeCategoryId)) {
@@ -2657,11 +3038,21 @@ function render() {
   if (activeCategoryChanged) saveActiveCategory();
   const scopedTodos = getVisibleTodos();
   const plannedView = getPlannedViewConfig();
-  if (plannedView) {
+  if (isWeekView()) {
+    activeList.innerHTML = '';
+    completedList.innerHTML = '';
+    completedSection.hidden = true;
+  } else if (plannedView) {
     const entries = getActivePlannedEntries();
     const activeEntries = entries.filter(({ item }) => !item.done);
     const completedEntries = entries.filter(({ item }) => item.done);
-    if (plannedView.isRange) {
+    if (plannedView.kind === 'week') {
+      activeList.innerHTML = activeEntries.length > 0
+        ? renderWeekGroups(activeEntries)
+        : getEmptyStateHtml(scopedTodos);
+      completedList.innerHTML = completedEntries.length > 0 ? renderWeekGroups(completedEntries) : '';
+      completedSection.hidden = completedEntries.length === 0;
+    } else if (plannedView.isRange) {
       activeList.innerHTML = activeEntries.length > 0
         ? renderLaterGroups(activeEntries)
         : getEmptyStateHtml(scopedTodos);
@@ -2688,18 +3079,25 @@ function render() {
   taskWorkspace.classList.toggle('planned-date-view', isPlannedDateView());
   taskWorkspace.classList.toggle('today-view', isTodayView());
   taskWorkspace.classList.toggle('tomorrow-view', isTomorrowView());
+  taskWorkspace.classList.toggle('week-view', isWeekView());
   taskWorkspace.classList.toggle('later-view', isLaterView());
   if (plannedView) {
-    workspaceLabel.textContent = plannedView.isRange ? 'TODOLIST · 未来安排' : `TODOLIST · ${formatDateHeading(plannedView.date)}`;
+    workspaceLabel.textContent = plannedView.kind === 'week'
+      ? 'TODOLIST · 近期记录'
+      : plannedView.isRange
+        ? 'TODOLIST · 未来安排'
+        : `TODOLIST · ${formatDateHeading(plannedView.date)}`;
     workspaceTitle.textContent = plannedView.title;
   } else if (activeCategoryId === UNASSIGNED_CATEGORY_ID) workspaceTitle.textContent = '未分组';
   else workspaceTitle.textContent = getCategoryName(activeCategoryId);
   if (!plannedView) workspaceLabel.textContent = 'TODOLIST · 专注工作台';
 
   renderDailyReviewEntry();
+  renderWeekOverview();
   renderCarryover();
   renderCategoryNavigation();
   syncComposerCategory();
+  progressLabel.textContent = isWeekView() ? '事实视图' : '完成率';
   updateListSummary();
 }
 
@@ -3842,6 +4240,24 @@ function openCategoryTask(todoId, categoryId) {
   });
 }
 
+function openReviewTaskInWorkspace(parentId, itemId) {
+  const parent = todos.find(todo => todo.id === parentId);
+  if (!parent) return;
+  if ((parent.done || parent.subtasks.some(subtask => subtask.id === itemId && subtask.done)) && !completedExpanded) {
+    setCompletedExpanded(true, { persist: true });
+  }
+  const targetCategory = parent.categoryId || UNASSIGNED_CATEGORY_ID;
+  setActiveCategory(targetCategory);
+  requestAnimationFrame(() => {
+    const target = getTodoElement(itemId) || getTodoElement(parentId);
+    if (!target) return;
+    const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+    target.scrollIntoView({ behavior, block: 'center' });
+    target.classList.add('sidebar-target-highlight');
+    setTimeout(() => target.isConnected && target.classList.remove('sidebar-target-highlight'), 1200);
+  });
+}
+
 function openMoveDialog(todoId) {
   const todo = todos.find(item => item.id === todoId);
   if (!todo) return;
@@ -4273,7 +4689,49 @@ clearBtn.addEventListener('click', clearCompleted);
 
 todayTasksNav.addEventListener('click', () => setActiveCategory(TODAY_CATEGORY_ID));
 tomorrowTasksNav.addEventListener('click', () => setActiveCategory(TOMORROW_CATEGORY_ID));
+weekTasksNav.addEventListener('click', () => setActiveCategory(WEEK_CATEGORY_ID));
 laterTasksNav.addEventListener('click', () => setActiveCategory(LATER_CATEGORY_ID));
+weekOverview.addEventListener('click', event => {
+  const dailyButton = event.target.closest('[data-review-daily-date]');
+  if (dailyButton) {
+    openDailyReviewDialog({ reviewDate: dailyButton.dataset.reviewDailyDate, returnFocus: dailyButton });
+    return;
+  }
+  const taskButton = event.target.closest('[data-review-task-id]');
+  if (taskButton) {
+    const taskId = taskButton.dataset.reviewTaskId;
+    const state = findTodoItem(taskId);
+    if (!state) return;
+    if (taskButton.dataset.reviewEvidence === 'review' || (taskButton.dataset.reviewOpen === 'true' && taskButton.dataset.reviewId)) {
+      openCompletionReviewDialog(taskId, {
+        reviewDate: taskButton.dataset.reviewDate || getLocalDateKey(),
+        reviewId: taskButton.dataset.reviewId || null,
+        returnFocus: taskButton,
+      });
+      return;
+    }
+    openReviewTaskInWorkspace(state.todo.id, taskId);
+  }
+  if (event.target.closest('[data-review-open-more]')) {
+    workReviewOpenExpanded = true;
+    render();
+    return;
+  }
+  if (event.target.closest('[data-review-save]')) {
+    const range = getRecentReviewRange();
+    const textarea = document.getElementById('workReviewConclusion');
+    const status = document.getElementById('workReviewSaveStatus');
+    if (!textarea || !status) return;
+    const content = textarea.value.trim();
+    if (content.length > 3000) {
+      status.textContent = '结论不能超过 3000 个字符。';
+      return;
+    }
+    saveWorkReviewContent(range, content);
+    status.textContent = content ? '已保存' : '已清空';
+    setTimeout(() => { if (status.isConnected) status.textContent = ''; }, 1600);
+  }
+});
 carryAllToTodayBtn.addEventListener('click', () => moveEntriesToToday(getCarryoverEntries()));
 todayCarryoverList.addEventListener('click', event => {
   const button = event.target.closest('[data-carryover-id]');
@@ -4899,7 +5357,7 @@ async function startTodoApp(user) {
   activeList.innerHTML = '<li class="empty-state"><p>正在从云端加载...</p></li>';
   completedSection.hidden = true;
   try {
-    await Promise.all([loadCategories(), loadTodos()]);
+    await Promise.all([loadCategories(), loadTodos(), loadDailyReviews()]);
     if (sessionVersion !== appSessionVersion || activeUserId !== user.id) return;
     await ensureOverdueCompletionReviews();
     if (sessionVersion !== appSessionVersion || activeUserId !== user.id) return;

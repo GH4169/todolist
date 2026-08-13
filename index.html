@@ -134,6 +134,11 @@
                 <span>后续待办</span>
                 <b id="laterTaskCount">0</b>
               </button>
+              <button class="group-nav-item week-nav-item" id="weekTasksNav" type="button" data-category-id="week">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M8 14h2M14 14h2M8 18h2M14 18h2"/></svg>
+                <span>近期复盘</span>
+                <b id="weekTaskCount">0</b>
+              </button>
             </div>
 
             <div class="group-nav-heading">
@@ -175,7 +180,7 @@
                   </svg>
                   <div class="progress-text">
                     <div class="progress-percent" id="percentText">0%</div>
-                    <div class="progress-label">完成率</div>
+                    <div class="progress-label" id="progressLabel">完成率</div>
                   </div>
                 </div>
               </div>
@@ -195,6 +200,8 @@
               <span id="dailyReviewActionLabel">写今日复盘</span>
             </button>
           </section>
+
+          <section class="week-overview" id="weekOverview" aria-label="近期复盘" hidden></section>
 
           <div class="input-section">
             <div class="input-group">
