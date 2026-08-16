@@ -139,6 +139,11 @@
                 <span>近期复盘</span>
                 <b id="weekTaskCount">0</b>
               </button>
+              <button class="group-nav-item ai-companion-nav-item" id="aiCompanionNav" type="button" aria-label="AI 伙伴">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-6l-4 3v-3H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/><path d="M8 11h.01M12 11h.01M16 11h.01"/></svg>
+                <span>AI 伙伴</span>
+                <b id="aiProposalCount" hidden>0</b>
+              </button>
             </div>
 
             <div class="group-nav-heading">
@@ -333,6 +338,46 @@
               </div>
             </form>
           </section>
+
+          <section class="settings-section ai-integration-section" aria-labelledby="integrationTitle">
+            <div class="ai-settings-heading"><div><h2 id="integrationTitle">Codex 集成</h2><p>令牌只在创建时显示一次，默认 90 天后过期。</p></div><button class="ai-credential-save" id="createIntegrationTokenBtn" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>新建令牌</span></button></div>
+            <div class="integration-token-create" id="integrationTokenCreate" hidden><label for="integrationTokenName">令牌名称</label><input id="integrationTokenName" maxlength="80" placeholder="例如：我的 Codex"><div class="integration-scope-options"><label><input id="integrationScopeRead" type="checkbox" checked>读取记录</label><label><input id="integrationScopeProposal" type="checkbox" checked>保存提案</label></div><div class="ai-credential-actions"><button class="dialog-secondary" id="cancelIntegrationTokenBtn" type="button">取消</button><button class="dialog-primary" id="saveIntegrationTokenBtn" type="button">创建</button></div></div>
+            <p class="integration-token-once" id="integrationTokenOnce" hidden></p><ul class="integration-token-list" id="integrationTokenList"><li>正在读取令牌...</li></ul>
+          </section>
+        </section>
+
+        <section class="ai-companion-view" id="aiCompanionView" hidden aria-labelledby="aiCompanionTitle">
+          <header class="ai-companion-header">
+            <div>
+              <p class="workspace-label">TODOLIST · 同行者</p>
+              <h1 id="aiCompanionTitle">AI 伙伴</h1>
+              <p class="subtitle">真诚、理性，不替你做决定。</p>
+            </div>
+            <div class="ai-companion-actions">
+              <button class="ai-icon-button" id="aiMemoriesButton" type="button" title="长期记忆" aria-label="打开长期记忆"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a7 7 0 0 0-4 12.7V19h8v-3.3A7 7 0 0 0 12 3Z"/><path d="M9 22h6M9 19h6"/></svg></button>
+              <button class="ai-new-conversation" id="aiNewConversationButton" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>新对话</span></button>
+            </div>
+          </header>
+          <div class="ai-companion-tabs" role="tablist" aria-label="AI 伙伴视图">
+            <button class="ai-tab active" id="aiChatTab" type="button" role="tab" aria-selected="true" data-ai-tab="chat">对话</button>
+            <button class="ai-tab" id="aiProposalTab" type="button" role="tab" aria-selected="false" data-ai-tab="proposals">待确认 <b id="aiProposalTabCount" hidden>0</b></button>
+          </div>
+          <div class="ai-companion-layout" id="aiChatLayout">
+            <aside class="ai-conversation-panel" id="aiConversationPanel" aria-label="对话列表">
+              <div class="ai-panel-heading"><span>会话</span><button class="ai-icon-button" id="aiMobileConversationClose" type="button" title="关闭会话列表" aria-label="关闭会话列表"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+              <ul class="ai-conversation-list" id="aiConversationList"></ul>
+            </aside>
+            <section class="ai-chat-panel" aria-label="AI 对话">
+              <header class="ai-chat-heading"><button class="ai-icon-button ai-mobile-conversations" id="aiMobileConversationsButton" type="button" title="会话列表" aria-label="会话列表"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/></svg></button><div><strong id="aiChatTitle">新对话</strong><span id="aiChatStatus">准备好了</span></div></header>
+              <div class="ai-message-list" id="aiMessageList" aria-live="polite"><div class="ai-empty-state" id="aiEmptyState"><strong>从一个真实问题开始</strong><span>你可以聊工作、生活、关系、选择或情绪。</span></div></div>
+              <form class="ai-chat-composer" id="aiChatForm">
+                <textarea id="aiChatInput" rows="2" maxlength="12000" placeholder="此刻最想理清什么？" aria-label="发送给 AI 伙伴的问题"></textarea>
+                <div class="ai-composer-footer"><span>仅发送最近对话与必要记录</span><div><button class="ai-stop-button" id="aiStopButton" type="button" hidden>停止</button><button class="ai-send-button" id="aiSendButton" type="submit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 4 16 8-16 8 3-8-3-8Z"/><path d="M7 12h13"/></svg><span>发送</span></button></div></div>
+              </form>
+            </section>
+          </div>
+          <section class="ai-side-panel" id="aiMemoryPanel" hidden aria-labelledby="aiMemoryTitle"><div class="ai-side-panel-heading"><div><h2 id="aiMemoryTitle">长期记忆</h2><p>只有确认后才会用于后续对话。</p></div><button class="ai-icon-button" data-ai-close-panel="memory" type="button" title="关闭" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div><div id="aiMemoryList" class="ai-memory-list"></div></section>
+          <section class="ai-side-panel" id="aiProposalPanel" hidden aria-labelledby="aiProposalTitle"><div class="ai-side-panel-heading"><div><h2 id="aiProposalTitle">待确认提案</h2><p>AI 只能提出修改，任务变更需要你逐项确认。</p></div></div><div id="aiProposalList" class="ai-proposal-list"></div></section>
         </section>
       </main>
     </div>
@@ -593,5 +638,6 @@
   <script src="js/theme.js"></script>
   <script src="js/main.js"></script>
   <script src="js/auth.js"></script>
+  <script src="js/ai-companion.js"></script>
 </body>
 </html>

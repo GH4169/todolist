@@ -32,7 +32,8 @@ TodoList 帮助你整理日常工作：使用自定义分组收纳父任务、�
 - 为父任务和子任务设置按日期保存的完成目标；卡片聚焦当前或最近目标，历史目标可在编辑面板中查看、修改和删除。
 - 按日期评价父任务和子任务的每日完成情况；已安排任务到次日仍未评价时自动记为“未推进”，并保留当天目标快照供后续复盘。
 - 在今日待办中记录按日期保存的“今日复盘”，整理计划外事务、探索、阻塞依赖和次日调整，并可从历史列表补充或修改往日记录；详见 [`docs/daily-review-journal-design.md`](docs/daily-review-journal-design.md)。
-- 在近期复盘中生成有证据引用的 AI 工作复盘，查看重要产出、阻塞与偏差、下一步建议，并从引用直接回到对应任务、评价或工作日记录。
+- 使用独立的“AI 伙伴”页面持续对话：引用 TodoList 记录、确认长期记忆、流式回答，并提出不会直接执行的任务变更建议。
+- 通过带权限范围的 MCP 令牌连接 Codex，读取任务与已确认记忆，或保存等待网页审核的变更提案。
 - 创建、排序、行内重命名和删除自定义分组，将父任务连同子任务拖动或批量移动到其他分组。
 - 首次使用时从“今日待办”开始，之后返回上次打开的今日、明日、后续待办或任务分组视图。
 - 默认显示进行中的任务，已完成任务收纳在列表底部的可记忆折叠区。
@@ -53,21 +54,33 @@ TodoList 帮助你整理日常工作：使用自定义分组收纳父任务、�
 
 ## 数据库升级
 
-部署本版本前，请在 Supabase SQL Editor 中完整执行最新的 [`supabase-schema.sql`](supabase-schema.sql)。脚本会增量创建分组、日期安排、完成目标、任务级完成评价、工作复盘和 AI 运行记录所需的数据结构；已有任务不会被修改或删除。
+部署本版本前，请在 Supabase SQL Editor 中完整执行最新的 [`supabase-schema.sql`](supabase-schema.sql)。脚本会增量创建分组、日期安排、完成目标、任务级完成评价、工作复盘、AI 伙伴会话与记忆、集成令牌、提案执行记录、私有广播和仅服务端可调用的全历史搜索 RPC；已有任务不会被修改或删除，历史 `ai_review_runs` 数据会保留。
 
-## AI 工作复盘部署
+## AI 伙伴与 Codex MCP 部署
 
-当前版本已实现网页端只读 AI 复盘：用户在设置中保存自己的 AI 服务 API Key，服务端验证并加密保存；近期复盘页按当前 7 天范围生成结构化分析。任务变更提案和 Codex CLI MCP 接入仍属于下一阶段，完整边界见 [`docs/ai-review-codex-integration-design.md`](docs/ai-review-codex-integration-design.md)。
+当前版本使用独立的“AI 伙伴”页面：网页端对 Todo 数据保持只读，回答通过 Responses API 流式返回并附带引用；AI 最多提出三条长期记忆建议，用户可编辑后确认。旧的一键 AI 工作复盘入口已移除，但历史 `ai_review_runs` 行仍保留。
 
 1. 安装并登录 Supabase CLI，然后把仓库关联到目标项目。
-2. 复制 [`supabase/functions/.env.example`](supabase/functions/.env.example) 为本地私密配置，使用 `openssl rand -base64 32` 生成 `AI_CREDENTIAL_MASTER_KEY`。不要提交实际密钥。
-3. 根据部署域名设置 `ALLOWED_ORIGINS`。网页设置页可以为每个用户填写自己的 `Base URL` 和模型；`OPENAI_BASE_URL`、`OPENAI_MODEL` 只作为旧凭据或首次打开设置页时的默认值。服务地址必须支持 `/models`、`/responses` 和结构化输出。需要收紧外部访问时，可设置 `AI_PROVIDER_ALLOWED_HOSTS` 为逗号分隔的精确域名或域名后缀。
-4. 上传配置并部署两个函数：
+2. 复制 [`supabase/functions/.env.example`](supabase/functions/.env.example) 为本地私密配置，使用 `openssl rand -base64 32` 生成 `AI_CREDENTIAL_MASTER_KEY` 和 `INTEGRATION_TOKEN_PEPPER`。不要提交实际密钥。
+3. 如果使用 Codex 中转站，将 `OPENAI_BASE_URL` 设置为中转站地址，将 `OPENAI_API_KEY` 设置为本机 `~/.codex/auth.json` 中的 `OPENAI_API_KEY`。本项目会把它作为服务器默认配置，用户无需再把密钥粘贴到网页；实际密钥只应保存在本地私密环境文件和 Supabase Secrets 中。根据部署域名设置 `ALLOWED_ORIGINS` 和 `PUBLIC_APP_URL`。服务地址必须支持 `/models`、`/responses` 和结构化输出。需要收紧外部访问时，可设置 `AI_PROVIDER_ALLOWED_HOSTS` 为逗号分隔的精确域名或域名后缀。
+4. 上传配置并部署这些函数：
 
 ```bash
 npx supabase secrets set --env-file supabase/functions/.env
 npx supabase functions deploy ai-credential
 npx supabase functions deploy ai-review
+npx supabase functions deploy ai-chat
+npx supabase functions deploy ai-proposal
+npx supabase functions deploy integration-token
+npx supabase functions deploy todolist-mcp
 ```
 
-Supabase 会向函数提供 `SUPABASE_URL`、`SUPABASE_ANON_KEY` 和 `SUPABASE_SERVICE_ROLE_KEY`，不要把这些服务端凭据放进网页代码。部署后，在设置页先保存并验证 API Key，再到“近期复盘”生成分析。
+Supabase 会向函数提供 `SUPABASE_URL`、`SUPABASE_ANON_KEY` 和 `SUPABASE_SERVICE_ROLE_KEY`，不要把这些服务端凭据放进网页代码。部署后，在设置页先保存并验证 API Key，再打开“AI 伙伴”。集成令牌最多同时保留五个，有效期 90 天，明文只在创建时显示一次。Codex 可通过环境变量接入：
+
+```toml
+[mcp_servers.todolist]
+url = "https://<project-ref>.supabase.co/functions/v1/todolist-mcp"
+bearer_token_env_var = "TODOLIST_MCP_TOKEN"
+```
+
+MCP 提供读取工具和 `create_change_proposal`；提案七天后过期，任何允许的任务操作都必须在网页中逐项勾选并二次确认。

@@ -165,8 +165,9 @@ Deno.serve(async request => {
       .eq('provider', PROVIDER)
       .maybeSingle();
     if (credentialError) throw new HttpError(500, 'credential_load_failed', '无法读取 AI 服务设置');
-    if (!credential) throw new HttpError(412, 'api_key_required', '请先在设置中配置 AI 服务 API Key');
-    if (credential.key_version !== 1) {
+    const serverApiKey = Deno.env.get('OPENAI_API_KEY')?.trim() || '';
+    if (!credential && !serverApiKey) throw new HttpError(412, 'api_key_required', '请先在设置中配置 AI 服务 API Key');
+    if (credential && credential.key_version !== 1) {
       throw new HttpError(503, 'credential_version_unsupported', '已保存的 API Key 需要重新配置');
     }
 
@@ -195,9 +196,11 @@ Deno.serve(async request => {
     if (runError || !run) throw new HttpError(500, 'analysis_create_failed', '无法创建 AI 分析记录');
     runId = run.id;
 
-    const apiKey = await decryptApiKey(credential.encrypted_secret, credential.iv, clients.user.id);
-    const configuredBaseUrl = credential.base_url || Deno.env.get('OPENAI_BASE_URL') || undefined;
-    const configuredModel = credential.model || Deno.env.get('OPENAI_MODEL')?.trim() || DEFAULT_MODEL;
+    const apiKey = credential
+      ? await decryptApiKey(credential.encrypted_secret, credential.iv, clients.user.id)
+      : serverApiKey;
+    const configuredBaseUrl = credential?.base_url || Deno.env.get('OPENAI_BASE_URL') || undefined;
+    const configuredModel = credential?.model || Deno.env.get('OPENAI_MODEL')?.trim() || DEFAULT_MODEL;
     const completion = await requestReview(apiKey, configuredBaseUrl, configuredModel, context);
     const result = validateReviewResult(completion.result, evidenceRefs);
     const completedAt = new Date().toISOString();

@@ -44,6 +44,8 @@ const mobileSidebarToggle = document.getElementById('mobileSidebarToggle');
 const sidebarScrim = document.getElementById('sidebarScrim');
 const taskWorkspace = document.getElementById('taskWorkspace');
 const settingsView = document.getElementById('settingsView');
+const aiCompanionView = document.getElementById('aiCompanionView');
+const aiCompanionNav = document.getElementById('aiCompanionNav');
 const settingsBtn = document.getElementById('settingsBtn');
 const accountMenuToggle = document.getElementById('accountMenuButton');
 const accountMenuPanel = document.getElementById('accountMenu');
@@ -195,12 +197,11 @@ let dailyReviewHistoryLimit = 5;
 let dailyReviewLoadedUpdatedAt = null;
 let overdueCompletionReviewPromise = null;
 let workReviewOpenExpanded = false;
-let aiReviewGenerating = false;
-let aiReviewError = '';
 let aiCredentialConfig = {
   loaded: false,
   available: true,
   configured: false,
+  source: 'none',
   keyHint: null,
   lastVerifiedAt: null,
   baseUrl: 'https://api.openai.com/v1',
@@ -1235,6 +1236,9 @@ function setActiveCategory(categoryId) {
   saveActiveCategory();
   taskWorkspace.hidden = false;
   settingsView.hidden = true;
+  if (aiCompanionView) aiCompanionView.hidden = true;
+  aiCompanionNav?.classList.remove('active');
+  aiCompanionNav?.removeAttribute('aria-current');
   settingsBtn.classList.remove('active');
   closeMobileSidebar();
   render();
@@ -2907,96 +2911,6 @@ function renderRecentReviewDay(day) {
   </article>`;
 }
 
-function getAiEvidenceMeta(reference) {
-  if (reference.startsWith('daily_review:')) {
-    const id = reference.slice('daily_review:'.length);
-    const review = dailyReviews.find(item => item.id === id);
-    return review ? { label: formatGoalDate(review.reviewDate), kind: 'daily', id: review.id, date: review.reviewDate } : null;
-  }
-  if (reference.startsWith('completion_review:')) {
-    const id = reference.slice('completion_review:'.length);
-    for (const entry of getTaskEntries()) {
-      const review = entry.item.completionReviews?.find(item => item.id === id);
-      if (review) {
-        return {
-          label: `${entry.item.text} · ${formatGoalDate(review.reviewDate)}`,
-          kind: 'completion',
-          id: entry.item.id,
-          reviewId: review.id,
-          date: review.reviewDate,
-        };
-      }
-    }
-    return null;
-  }
-  if (reference.startsWith('todo:')) {
-    const id = reference.slice('todo:'.length);
-    const state = findTodoItem(id);
-    return state ? { label: state.item.text, kind: 'todo', id: state.item.id } : null;
-  }
-  if (reference.startsWith('work_review:')) {
-    const id = reference.slice('work_review:'.length);
-    const review = workReviews.find(item => item.id === id);
-    return review ? { label: '人工复盘结论', kind: 'work', id: review.id } : null;
-  }
-  return null;
-}
-
-function renderAiEvidenceRefs(references = []) {
-  const items = references.map(reference => ({ reference, meta: getAiEvidenceMeta(reference) }))
-    .filter(item => item.meta);
-  if (items.length === 0) return '<span class="ai-review-inference">建议性判断</span>';
-  return `<span class="ai-review-evidence-links">${items.map(({ reference, meta }) => `
-    <button type="button" data-ai-evidence-ref="${escapeHtml(reference)}">${escapeHtml(meta.label)}</button>`).join('')}</span>`;
-}
-
-function renderAiReviewItems(title, items, className) {
-  if (!Array.isArray(items) || items.length === 0) return '';
-  return `<div class="ai-review-group ${className}">
-    <h3>${escapeHtml(title)}</h3>
-    <div class="ai-review-insights">${items.map(item => `
-      <article class="ai-review-insight">
-        <strong>${escapeHtml(item.title || '')}</strong>
-        <p>${escapeHtml(item.detail || '')}</p>
-        ${renderAiEvidenceRefs(item.evidence_refs)}
-      </article>`).join('')}</div>
-  </div>`;
-}
-
-function renderAiReviewSection(range) {
-  const run = getLatestAiReviewRunForRange(range.startKey, range.endKey);
-  const actionLabel = aiReviewGenerating ? '分析中...' : run?.status === 'succeeded' ? '重新生成' : '生成分析';
-  let content = '';
-  if (aiReviewGenerating) {
-    content = '<div class="ai-review-loading" role="status"><span aria-hidden="true"></span><p>正在整理工作记录...</p></div>';
-  } else if (run?.status === 'succeeded' && run.result) {
-    const result = run.result;
-    const generatedAt = run.completedAt || run.createdAt;
-    content = `<div class="ai-review-result">
-      <p class="ai-review-summary">${escapeHtml(result.summary || '')}</p>
-      ${renderAiReviewItems('重要产出', result.highlights, 'is-highlight')}
-      ${renderAiReviewItems('阻塞与偏差', result.blockers, 'is-blocker')}
-      ${renderAiReviewItems('下一步建议', result.recommendations, 'is-recommendation')}
-      ${Array.isArray(result.limitations) && result.limitations.length > 0 ? `
-        <div class="ai-review-limitations"><strong>分析边界</strong><ul>${result.limitations.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></div>` : ''}
-      <p class="ai-review-meta">${generatedAt ? `生成于 ${formatTime(generatedAt)}` : ''}${run.model ? ` · ${escapeHtml(run.model)}` : ''}</p>
-    </div>`;
-  } else {
-    const message = aiReviewError || (run?.status === 'failed' ? '上次分析未完成，可以重新生成。' : '尚未生成 AI 工作复盘。');
-    content = `<p class="ai-review-empty-state">${escapeHtml(message)}</p>`;
-  }
-  return `<section class="work-review-section ai-work-review" aria-labelledby="ai-work-review-title">
-    <div class="work-review-section-heading ai-review-heading">
-      <div><h2 id="ai-work-review-title">AI 工作复盘</h2><span>基于当前范围的工作记录</span></div>
-      <button class="ai-review-generate" type="button" data-ai-review-generate ${aiReviewGenerating ? 'disabled' : ''}>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 1.4 4.1L17.5 8.5l-4.1 1.4L12 14l-1.4-4.1-4.1-1.4 4.1-1.4L12 3zM18 14l.8 2.2L21 17l-2.2.8L18 20l-.8-2.2L15 17l2.2-.8L18 14z"/></svg>
-        <span>${actionLabel}</span>
-      </button>
-    </div>
-    ${content}
-  </section>`;
-}
-
 function renderRecentWorkReview() {
   const range = getRecentReviewRange();
   const days = getRecentReviewEvidence(range);
@@ -3018,7 +2932,6 @@ function renderRecentWorkReview() {
       const label = entry.recentReview ? `${getCompletionReviewResultConfig(entry.recentReview.result).label}${entry.recentReview.content ? ` · ${entry.recentReview.content}` : ''}` : `原安排 ${formatGoalDate(entry.item.plannedDate)}`;
       return renderReviewTaskButton(entry, label, `data-review-open="true" data-review-date="${entry.recentReview?.reviewDate || ''}" data-review-id="${entry.recentReview?.id || ''}"`);
     }).join('')}</div>${openItems.length > 5 && !workReviewOpenExpanded ? `<button class="work-review-more" type="button" data-review-open-more>查看其余 ${openItems.length - 5} 项</button>` : ''}` : '<p class="work-review-section-empty">这段时间没有留下需要继续处理的事项。</p>'}</section>
-    ${renderAiReviewSection(range)}
     <section class="work-review-section work-review-conclusion" aria-labelledby="work-review-conclusion-title"><div class="work-review-section-heading"><h2 id="work-review-conclusion-title">复盘结论</h2><span>可选</span></div><label class="sr-only" for="workReviewConclusion">复盘结论</label><textarea id="workReviewConclusion" maxlength="3000" placeholder="这段时间最重要的产出是什么？\n哪些阻塞或计划外工作值得记住？\n下一段工作准备保留、停止或调整什么？">${escapeHtml(reviewContent)}</textarea><div class="work-review-conclusion-actions"><span id="workReviewSaveStatus" role="status" aria-live="polite"></span><button type="button" data-review-save>保存结论</button></div></section>`;
 }
 
@@ -3582,6 +3495,9 @@ function showTaskWorkspace() {
   setAccountMenuOpen(false);
   taskWorkspace.hidden = false;
   settingsView.hidden = true;
+  if (aiCompanionView) aiCompanionView.hidden = true;
+  aiCompanionNav?.classList.remove('active');
+  aiCompanionNav?.removeAttribute('aria-current');
   settingsBtn.classList.remove('active');
   closeMobileSidebar();
 }
@@ -3590,9 +3506,13 @@ function showSettings() {
   setAccountMenuOpen(false);
   taskWorkspace.hidden = true;
   settingsView.hidden = false;
+  if (aiCompanionView) aiCompanionView.hidden = true;
+  aiCompanionNav?.classList.remove('active');
+  aiCompanionNav?.removeAttribute('aria-current');
   settingsBtn.classList.add('active');
   closeMobileSidebar();
   void refreshAiCredentialStatus(true);
+  window.dispatchEvent(new Event('settings-ai-open'));
 }
 
 function renderAiCredentialSettings() {
@@ -3607,9 +3527,11 @@ function renderAiCredentialSettings() {
     const verified = aiCredentialConfig.lastVerifiedAt
       ? ` · 最近验证 ${formatTime(new Date(aiCredentialConfig.lastVerifiedAt).getTime())}`
       : '';
-    aiCredentialSummary.textContent = `已保存 Key ····${aiCredentialConfig.keyHint || ''}${verified}`;
+    aiCredentialSummary.textContent = aiCredentialConfig.source === 'server_default'
+      ? `使用服务器默认 AI 服务 · ${aiCredentialConfig.baseUrl} · ${aiCredentialConfig.model}`
+      : `已保存 Key ····${aiCredentialConfig.keyHint || ''}${verified}`;
   } else {
-    aiCredentialSummary.textContent = '保存后可在工作复盘中生成分析。';
+    aiCredentialSummary.textContent = '配置后可使用 AI 伙伴。';
   }
   if (document.activeElement !== aiBaseUrlInput && aiCredentialConfig.baseUrl) {
     aiBaseUrlInput.value = aiCredentialConfig.baseUrl;
@@ -3617,7 +3539,7 @@ function renderAiCredentialSettings() {
   if (document.activeElement !== aiModelInput && aiCredentialConfig.model) {
     aiModelInput.value = aiCredentialConfig.model;
   }
-  deleteAiCredentialBtn.hidden = !aiCredentialConfig.configured || !aiCredentialConfig.available;
+  deleteAiCredentialBtn.hidden = aiCredentialConfig.source !== 'user' || !aiCredentialConfig.available;
   saveAiCredentialBtn.disabled = !aiCredentialConfig.available;
   aiApiKeyInput.disabled = !aiCredentialConfig.available;
 }
@@ -3632,6 +3554,7 @@ async function refreshAiCredentialStatus(silent = false) {
       loaded: true,
       available: true,
       configured: Boolean(status.configured),
+      source: status.source || (status.configured ? 'user' : 'none'),
       keyHint: status.key_hint || null,
       lastVerifiedAt: status.last_verified_at || null,
       baseUrl: status.base_url || 'https://api.openai.com/v1',
@@ -3671,6 +3594,7 @@ async function handleAiCredentialSave(event) {
       loaded: true,
       available: true,
       configured: true,
+      source: 'user',
       keyHint: status.key_hint || null,
       lastVerifiedAt: status.last_verified_at || null,
       baseUrl: status.base_url || baseUrl,
@@ -3688,7 +3612,7 @@ async function handleAiCredentialSave(event) {
 }
 
 async function removeAiCredential() {
-  if (!aiCredentialConfig.configured || !window.confirm('删除已保存的 AI 服务 API Key？')) return;
+  if (aiCredentialConfig.source !== 'user' || !window.confirm('删除已保存的 AI 服务 API Key？')) return;
   const expectedUserId = activeUserId;
   deleteAiCredentialBtn.disabled = true;
   aiCredentialStatus.textContent = '正在删除...';
@@ -3702,59 +3626,6 @@ async function removeAiCredential() {
     if (activeUserId !== expectedUserId) return;
     aiCredentialStatus.textContent = error.message || 'API Key 删除失败';
     deleteAiCredentialBtn.disabled = false;
-  }
-}
-
-async function generateCurrentAiReview() {
-  if (aiReviewGenerating) return;
-  const expectedUserId = activeUserId;
-  if (!aiCredentialConfig.loaded) await refreshAiCredentialStatus(true);
-  if (activeUserId !== expectedUserId) return;
-  if (!aiCredentialConfig.available) {
-    showSettings();
-    aiCredentialStatus.textContent = 'AI 服务当前不可用，请检查部署配置';
-    return;
-  }
-  if (!aiCredentialConfig.configured) {
-    showSettings();
-    aiCredentialStatus.textContent = '请先配置 AI 服务 API Key';
-    aiApiKeyInput.focus();
-    return;
-  }
-  const range = getRecentReviewRange();
-  const days = getRecentReviewEvidence(range);
-  const completed = days.reduce((sum, day) => sum + day.completed.length, 0);
-  const reviews = days.reduce((sum, day) => sum + day.reviews.length, 0);
-  const openItems = getRecentReviewOpenItems(range).length;
-  if (!window.confirm(`将分析最近 7 天的 ${days.length} 个有记录工作日、${completed} 条完成记录、${reviews} 条任务评价和 ${openItems} 项未收口事项。继续？`)) return;
-
-  const workReviewDraft = document.getElementById('workReviewConclusion')?.value ?? null;
-  const renderWithDraft = () => {
-    render();
-    const conclusion = document.getElementById('workReviewConclusion');
-    if (conclusion && workReviewDraft !== null) conclusion.value = workReviewDraft;
-  };
-  aiReviewGenerating = true;
-  aiReviewError = '';
-  renderWithDraft();
-  try {
-    await generateAiReview({
-      rangeStart: range.startKey,
-      rangeEnd: range.endKey,
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai',
-      locale: document.documentElement.lang || 'zh-CN',
-    });
-    if (activeUserId !== expectedUserId) return;
-    showToast('AI 工作复盘已生成');
-  } catch (error) {
-    if (activeUserId !== expectedUserId) return;
-    aiReviewError = error.message || 'AI 分析失败，请稍后重试';
-    showToast(aiReviewError);
-  } finally {
-    if (activeUserId === expectedUserId) {
-      aiReviewGenerating = false;
-      renderWithDraft();
-    }
   }
 }
 
@@ -4988,30 +4859,6 @@ tomorrowTasksNav.addEventListener('click', () => setActiveCategory(TOMORROW_CATE
 weekTasksNav.addEventListener('click', () => setActiveCategory(WEEK_CATEGORY_ID));
 laterTasksNav.addEventListener('click', () => setActiveCategory(LATER_CATEGORY_ID));
 weekOverview.addEventListener('click', async event => {
-  if (event.target.closest('[data-ai-review-generate]')) {
-    await generateCurrentAiReview();
-    return;
-  }
-  const evidenceButton = event.target.closest('[data-ai-evidence-ref]');
-  if (evidenceButton) {
-    const meta = getAiEvidenceMeta(evidenceButton.dataset.aiEvidenceRef);
-    if (!meta) return;
-    if (meta.kind === 'daily') {
-      openDailyReviewDialog({ reviewDate: meta.date, returnFocus: evidenceButton });
-    } else if (meta.kind === 'completion') {
-      openCompletionReviewDialog(meta.id, {
-        reviewDate: meta.date,
-        reviewId: meta.reviewId,
-        returnFocus: evidenceButton,
-      });
-    } else if (meta.kind === 'todo') {
-      const state = findTodoItem(meta.id);
-      if (state) openReviewTaskInWorkspace(state.todo.id, state.item.id);
-    } else if (meta.kind === 'work') {
-      document.getElementById('workReviewConclusion')?.focus();
-    }
-    return;
-  }
   const dailyButton = event.target.closest('[data-review-daily-date]');
   if (dailyButton) {
     openDailyReviewDialog({ reviewDate: dailyButton.dataset.reviewDailyDate, returnFocus: dailyButton });
@@ -5704,7 +5551,6 @@ async function startTodoApp(user) {
       loadTodos(),
       loadDailyReviews(),
       loadWorkReviews(),
-      loadAiReviewRuns(),
     ]);
     if (sessionVersion !== appSessionVersion || activeUserId !== user.id) return;
     await ensureOverdueCompletionReviews();
@@ -5760,12 +5606,11 @@ function stopTodoApp() {
   completionReviewChannel = null;
   dailyReviewChannel = null;
   workReviewChannel = null;
-  aiReviewGenerating = false;
-  aiReviewError = '';
   aiCredentialConfig = {
     loaded: false,
     available: true,
     configured: false,
+    source: 'none',
     keyHint: null,
     lastVerifiedAt: null,
     baseUrl: 'https://api.openai.com/v1',

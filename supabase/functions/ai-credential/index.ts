@@ -60,6 +60,7 @@ Deno.serve(async request => {
     if (request.method === 'GET') {
       const defaultBaseUrl = normalizeOpenAiBaseUrl(Deno.env.get('OPENAI_BASE_URL'), 503);
       const defaultModel = Deno.env.get('OPENAI_MODEL')?.trim() || DEFAULT_MODEL;
+      const serverDefaultConfigured = Boolean(Deno.env.get('OPENAI_API_KEY')?.trim());
       const { data, error } = await serviceClient
         .from('ai_provider_credentials')
         .select('key_hint,last_verified_at,updated_at,base_url,model')
@@ -68,7 +69,8 @@ Deno.serve(async request => {
         .maybeSingle();
       if (error) throw new HttpError(500, 'credential_load_failed', '无法读取 AI 服务设置');
       return jsonResponse(request, {
-        configured: Boolean(data),
+        configured: Boolean(data) || serverDefaultConfigured,
+        source: data ? 'user' : serverDefaultConfigured ? 'server_default' : 'none',
         provider: PROVIDER,
         key_hint: data?.key_hint || null,
         base_url: data?.base_url || defaultBaseUrl,
@@ -133,6 +135,7 @@ Deno.serve(async request => {
     if (error) throw new HttpError(500, 'credential_save_failed', '无法保存 API Key');
     return jsonResponse(request, {
       configured: true,
+      source: 'user',
       provider: PROVIDER,
       key_hint: apiKey.slice(-4),
       base_url: baseUrl,

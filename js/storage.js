@@ -22,6 +22,10 @@ let completionReviews = [];
 let dailyReviews = [];
 let workReviews = [];
 let aiReviewRuns = [];
+let aiConversations = [];
+let aiChatMessages = [];
+let aiMemories = [];
+let aiProposals = [];
 let currentUserId = null;
 
 function setCurrentUser(user) {
@@ -33,6 +37,10 @@ function setCurrentUser(user) {
   dailyReviews = [];
   workReviews = [];
   aiReviewRuns = [];
+  aiConversations = [];
+  aiChatMessages = [];
+  aiMemories = [];
+  aiProposals = [];
 }
 
 function requireCurrentUserId() {
@@ -155,6 +163,53 @@ function mapAiReviewRunRow(row) {
     errorCode: row.error_code || null,
     createdAt: parseTime(row.created_at),
     completedAt: parseTime(row.completed_at),
+  };
+}
+
+function mapAiConversationRow(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    title: row.title || '新对话',
+    lastActiveAt: parseTime(row.last_active_at),
+    createdAt: parseTime(row.created_at),
+    updatedAt: parseTime(row.updated_at),
+  };
+}
+
+function mapAiChatMessageRow(row) {
+  return {
+    id: row.id,
+    conversationId: row.conversation_id,
+    userId: row.user_id,
+    role: row.role,
+    content: row.content || '',
+    status: row.status,
+    replyToId: row.reply_to_id || null,
+    revisionOfId: row.revision_of_id || null,
+    revisionNumber: row.revision_number || 1,
+    contextSnapshot: row.context_snapshot || null,
+    result: row.result || null,
+    model: row.model || null,
+    usage: row.usage || null,
+    errorCode: row.error_code || null,
+    createdAt: parseTime(row.created_at),
+    completedAt: parseTime(row.completed_at),
+  };
+}
+
+function mapAiMemoryRow(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    content: row.content || '',
+    kind: row.kind,
+    status: row.status,
+    sourceMessageId: row.source_message_id || null,
+    createdAt: parseTime(row.created_at),
+    updatedAt: parseTime(row.updated_at),
+    confirmedAt: parseTime(row.confirmed_at),
+    disabledAt: parseTime(row.disabled_at),
   };
 }
 
@@ -623,6 +678,175 @@ async function invokeAiFunction(name, { method = 'POST', body } = {}) {
   }
   return payload;
 }
+
+async function loadAiConversations(limit = 50) {
+  const userId = requireCurrentUserId();
+  const { data, error } = await supabaseClient.from('ai_conversations')
+    .select('id,user_id,title,last_active_at,created_at,updated_at')
+    .eq('user_id', userId).order('last_active_at', { ascending: false }).limit(limit);
+  if (error) throw error;
+  aiConversations = (data || []).map(mapAiConversationRow);
+  return aiConversations;
+}
+
+async function createAiConversation(title = '新对话') {
+  const userId = requireCurrentUserId();
+  const { data, error } = await supabaseClient.from('ai_conversations')
+    .insert({ user_id: userId, title: title.trim().slice(0, 80) || '新对话' })
+    .select('id,user_id,title,last_active_at,created_at,updated_at').single();
+  if (error) throw error;
+  const mapped = mapAiConversationRow(data);
+  aiConversations = [mapped, ...aiConversations.filter(item => item.id !== mapped.id)];
+  return mapped;
+}
+
+async function updateAiConversation(id, changes) {
+  const userId = requireCurrentUserId();
+  const { data, error } = await supabaseClient.from('ai_conversations')
+    .update(changes).eq('id', id).eq('user_id', userId)
+    .select('id,user_id,title,last_active_at,created_at,updated_at').single();
+  if (error) throw error;
+  const mapped = mapAiConversationRow(data);
+  aiConversations = aiConversations.map(item => item.id === id ? mapped : item);
+  return mapped;
+}
+
+async function deleteAiConversation(id) {
+  const userId = requireCurrentUserId();
+  const { error } = await supabaseClient.from('ai_conversations').delete().eq('id', id).eq('user_id', userId);
+  if (error) throw error;
+  aiConversations = aiConversations.filter(item => item.id !== id);
+  aiChatMessages = aiChatMessages.filter(item => item.conversationId !== id);
+}
+
+async function loadAiChatMessages(conversationId) {
+  const userId = requireCurrentUserId();
+  const { data, error } = await supabaseClient.from('ai_chat_messages')
+    .select('id,conversation_id,user_id,role,content,status,reply_to_id,revision_of_id,revision_number,context_snapshot,result,model,usage,error_code,created_at,completed_at')
+    .eq('conversation_id', conversationId).eq('user_id', userId).order('created_at', { ascending: true });
+  if (error) throw error;
+  const mapped = (data || []).map(mapAiChatMessageRow);
+  aiChatMessages = [...aiChatMessages.filter(item => item.conversationId !== conversationId), ...mapped];
+  return mapped;
+}
+
+async function loadAiMemories() {
+  const userId = requireCurrentUserId();
+  const { data, error } = await supabaseClient.from('ai_memories')
+    .select('id,user_id,content,kind,status,source_message_id,created_at,updated_at,confirmed_at,disabled_at')
+    .eq('user_id', userId).order('updated_at', { ascending: false });
+  if (error) throw error;
+  aiMemories = (data || []).map(mapAiMemoryRow);
+  return aiMemories;
+}
+
+async function updateAiMemory(id, changes) {
+  const userId = requireCurrentUserId();
+  const { data, error } = await supabaseClient.from('ai_memories').update(changes)
+    .eq('id', id).eq('user_id', userId)
+    .select('id,user_id,content,kind,status,source_message_id,created_at,updated_at,confirmed_at,disabled_at').single();
+  if (error) throw error;
+  const mapped = mapAiMemoryRow(data);
+  aiMemories = aiMemories.map(item => item.id === id ? mapped : item);
+  return mapped;
+}
+
+async function deleteAiMemory(id) {
+  const userId = requireCurrentUserId();
+  const { error } = await supabaseClient.from('ai_memories').delete().eq('id', id).eq('user_id', userId);
+  if (error) throw error;
+  aiMemories = aiMemories.filter(item => item.id !== id);
+}
+
+function parseAiSseEvents(buffer, flush = false) {
+  const events = [];
+  let rest = buffer;
+  while (true) {
+    const match = rest.match(/\r?\n\r?\n/);
+    if (!match) break;
+    const frame = rest.slice(0, match.index);
+    rest = rest.slice(match.index + match[0].length);
+    const eventType = frame.split(/\r?\n/).find(line => line.startsWith('event:'))?.slice(6).trim() || 'message';
+    const data = frame.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n');
+    if (!data || data === '[DONE]') continue;
+    try { events.push({ ...JSON.parse(data), type: eventType }); } catch { /* malformed event */ }
+  }
+  if (flush && rest.trim()) {
+    const eventType = rest.split(/\r?\n/).find(line => line.startsWith('event:'))?.slice(6).trim() || 'message';
+    const data = rest.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n');
+    if (data) { try { events.push({ ...JSON.parse(data), type: eventType }); } catch { /* malformed tail */ } }
+    rest = '';
+  }
+  return { events, rest };
+}
+
+async function streamAiChat({ conversationId, message, excludeRefs = [], userMessageId = null, revisionOfId = null, timezone = Intl.DateTimeFormat().resolvedOptions().timeZone, locale = document.documentElement.lang || 'zh-CN' }, callbacks = {}) {
+  const { data: sessionData, error: sessionError } = await supabaseClient.auth.getSession();
+  if (sessionError || !sessionData.session) throw new Error('登录状态已失效，请重新登录');
+  const controller = new AbortController();
+  callbacks.onController?.(controller);
+  const response = await fetch(SUPABASE_URL + '/functions/v1/ai-chat', {
+    method: 'POST', signal: controller.signal,
+    headers: { Authorization: 'Bearer ' + sessionData.session.access_token, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify({ conversation_id: conversationId, message, exclude_refs: excludeRefs, user_message_id: userMessageId, revision_of_id: revisionOfId, timezone, locale }),
+  });
+  if (!response.ok || !response.body) {
+    let payload = {};
+    try { payload = await response.json(); } catch { /* gateway response */ }
+    const error = new Error(payload?.error?.message || ('AI 服务请求失败 (' + response.status + ')'));
+    error.code = payload?.error?.code || 'ai_service_error';
+    throw error;
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const parsed = parseAiSseEvents(buffer, done);
+      buffer = parsed.rest;
+      for (const event of parsed.events) {
+        callbacks.onEvent?.(event);
+        if (event.type === 'error') {
+          const error = new Error(event.error?.message || 'AI 回复失败');
+          error.code = event.error?.code || 'ai_stream_error';
+          throw error;
+        }
+      }
+      if (done) break;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return controller;
+}
+
+async function loadAiProposals() {
+  const payload = await invokeAiFunction('ai-proposal', { method: 'GET' });
+  aiProposals = payload.proposals || [];
+  return aiProposals;
+}
+
+function getAiProposals() {
+  return aiProposals;
+}
+
+async function applyAiProposal(proposalId, itemIds) {
+  const payload = await invokeAiFunction('ai-proposal', { body: { action: 'apply', proposal_id: proposalId, item_ids: itemIds, confirm: true } });
+  await loadAiProposals();
+  return payload;
+}
+
+async function rejectAiProposal(proposalId) {
+  const payload = await invokeAiFunction('ai-proposal', { body: { action: 'reject', proposal_id: proposalId } });
+  await loadAiProposals();
+  return payload;
+}
+
+function listIntegrationTokens() { return invokeAiFunction('integration-token', { method: 'GET' }); }
+function createIntegrationToken({ name, scopes }) { return invokeAiFunction('integration-token', { body: { name, scopes } }); }
+function revokeIntegrationToken(tokenId) { return invokeAiFunction('integration-token', { method: 'DELETE', body: { token_id: tokenId } }); }
 
 function getAiCredentialStatus() {
   return invokeAiFunction('ai-credential', { method: 'GET' });

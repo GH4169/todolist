@@ -140,6 +140,103 @@ begin
 end
 $$;
 
+-- ============================================================
+-- AI 伙伴、长期记忆与 Codex MCP（增量，保留旧 AI 复盘数据）
+-- ============================================================
+
+create table if not exists public.ai_conversations (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  title text not null default '新对话' check (length(trim(title)) between 1 and 80),
+  last_active_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint ai_conversations_id_user_id_key unique (id, user_id)
+);
+
+create table if not exists public.ai_chat_messages (
+  id uuid primary key default gen_random_uuid(),
+  conversation_id uuid not null,
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  role text not null check (role in ('user', 'assistant')),
+  content text not null default '' check (length(content) <= 50000),
+  status text not null default 'completed'
+    check (status in ('pending', 'searching', 'streaming', 'completed', 'stopped', 'failed')),
+  reply_to_id uuid,
+  revision_of_id uuid,
+  revision_number integer not null default 1 check (revision_number between 1 and 100),
+  context_snapshot jsonb,
+  result jsonb,
+  model text,
+  usage jsonb,
+  error_code text,
+  created_at timestamptz not null default now(),
+  completed_at timestamptz,
+  constraint ai_chat_messages_conversation_owner_fkey foreign key (conversation_id, user_id)
+    references public.ai_conversations(id, user_id) on delete cascade,
+  constraint ai_chat_messages_reply_fkey foreign key (reply_to_id)
+    references public.ai_chat_messages(id) on delete set null,
+  constraint ai_chat_messages_revision_fkey foreign key (revision_of_id)
+    references public.ai_chat_messages(id) on delete set null,
+  constraint ai_chat_messages_context_check
+    check (context_snapshot is null or jsonb_typeof(context_snapshot) = 'object'),
+  constraint ai_chat_messages_result_check
+    check (result is null or jsonb_typeof(result) = 'object'),
+  constraint ai_chat_messages_usage_check
+    check (usage is null or jsonb_typeof(usage) = 'object')
+);
+
+create table if not exists public.ai_memories (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  content text not null check (length(trim(content)) between 1 and 500),
+  kind text not null check (kind in ('explicit_statement', 'observed_pattern')),
+  status text not null default 'proposed'
+    check (status in ('proposed', 'enabled', 'disabled', 'rejected')),
+  source_message_id uuid references public.ai_chat_messages(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  confirmed_at timestamptz,
+  disabled_at timestamptz
+);
+
+create index if not exists ai_conversations_user_active_idx
+  on public.ai_conversations(user_id, last_active_at desc);
+create index if not exists ai_chat_messages_conversation_created_idx
+  on public.ai_chat_messages(conversation_id, created_at, revision_number);
+create unique index if not exists ai_chat_messages_one_stream_per_user_idx
+  on public.ai_chat_messages(user_id)
+  where role = 'assistant' and status in ('searching', 'streaming');
+create index if not exists ai_memories_user_status_updated_idx
+  on public.ai_memories(user_id, status, updated_at desc);
+alter table public.ai_conversations enable row level security;
+alter table public.ai_chat_messages enable row level security;
+alter table public.ai_memories enable row level security;
+revoke all privileges on table public.ai_conversations from anon, public;
+revoke all privileges on table public.ai_chat_messages from anon, public;
+revoke all privileges on table public.ai_memories from anon, public;
+grant select, insert, update, delete on table public.ai_conversations to authenticated;
+grant select, insert, update, delete on table public.ai_chat_messages to authenticated;
+grant select, insert, update, delete on table public.ai_memories to authenticated;
+
+drop policy if exists "Users manage own AI conversations" on public.ai_conversations;
+create policy "Users manage own AI conversations"
+on public.ai_conversations for all to authenticated
+using (user_id = (select auth.uid()))
+with check (user_id = (select auth.uid()));
+
+drop policy if exists "Users manage own AI chat messages" on public.ai_chat_messages;
+create policy "Users manage own AI chat messages"
+on public.ai_chat_messages for all to authenticated
+using (user_id = (select auth.uid()))
+with check (user_id = (select auth.uid()));
+
+drop policy if exists "Users manage own AI memories" on public.ai_memories;
+create policy "Users manage own AI memories"
+on public.ai_memories for all to authenticated
+using (user_id = (select auth.uid()))
+with check (user_id = (select auth.uid()));
+
 create table if not exists public.ai_review_runs (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -815,6 +912,122 @@ using (
   )
 );
 
+-- AI 伙伴检索只允许服务端调用，避免客户端绕过上下文裁剪策略。
+create or replace function public.search_ai_context_for_user(
+  p_user_id uuid,
+  p_start_date date default null,
+  p_end_date date default null,
+  p_types text[] default array['todo', 'completion_goal', 'completion_review', 'daily_review', 'work_review', 'memory']::text[],
+  p_search_terms text[] default '{}'::text[],
+  p_limit integer default 80
+)
+returns table (
+  source_type text,
+  source_id uuid,
+  occurred_on date,
+  title text,
+  content text,
+  metadata jsonb
+)
+language sql
+security definer
+set search_path = public
+as $$
+  with candidates as (
+    select
+      'todo'::text as source_type,
+      t.id as source_id,
+      coalesce(t.planned_date, (t.created_at at time zone 'UTC')::date) as occurred_on,
+      t.text as title,
+      concat_ws(E'\n', nullif(t.description, ''), case when t.is_completed then '已完成' else '未完成' end) as content,
+      jsonb_build_object('is_completed', t.is_completed, 'planned_date', t.planned_date, 'parent_id', t.parent_id, 'category_id', t.category_id) as metadata
+    from public.todos t
+    where t.user_id = p_user_id and 'todo' = any(p_types)
+    union all
+    select 'completion_goal'::text, g.id, g.target_date, '完成目标', g.content,
+      jsonb_build_object('todo_id', g.todo_id)
+    from public.todo_completion_goals g
+    where g.user_id = p_user_id and 'completion_goal' = any(p_types)
+    union all
+    select 'completion_review'::text, r.id, r.review_date,
+      case r.result when 'achieved' then '目标已达成' when 'partial' then '目标部分完成' else '目标未完成' end,
+      r.content,
+      jsonb_build_object('todo_id', r.todo_id, 'result', r.result, 'goal_content_snapshot', r.goal_content_snapshot)
+    from public.todo_completion_reviews r
+    where r.user_id = p_user_id and 'completion_review' = any(p_types)
+    union all
+    select 'daily_review'::text, d.id, d.review_date, '每日复盘', d.content, '{}'::jsonb
+    from public.daily_reviews d
+    where d.user_id = p_user_id and 'daily_review' = any(p_types)
+    union all
+    select 'work_review'::text, w.id, w.range_end, '人工近期复盘', w.content,
+      jsonb_build_object('range_start', w.range_start, 'range_end', w.range_end)
+    from public.work_reviews w
+    where w.user_id = p_user_id and 'work_review' = any(p_types)
+    union all
+    select 'memory'::text, m.id, (m.updated_at at time zone 'UTC')::date,
+      case m.kind when 'explicit_statement' then '长期记忆：明确陈述' else '长期记忆：观察模式' end,
+      m.content,
+      jsonb_build_object('kind', m.kind, 'status', m.status, 'source_message_id', m.source_message_id)
+    from public.ai_memories m
+    where m.user_id = p_user_id and m.status = 'enabled' and 'memory' = any(p_types)
+  )
+  select c.source_type, c.source_id, c.occurred_on, c.title, c.content, c.metadata
+  from candidates c
+  where (p_start_date is null or c.occurred_on >= p_start_date)
+    and (p_end_date is null or c.occurred_on <= p_end_date)
+    and (
+      coalesce(cardinality(p_search_terms), 0) = 0
+      or exists (
+        select 1
+        from unnest(p_search_terms) term
+        where lower(concat_ws(' ', c.title, c.content)) like '%' || lower(term) || '%'
+      )
+    )
+  order by c.occurred_on desc nulls last
+  limit least(greatest(coalesce(p_limit, 80), 1), 80);
+$$;
+
+revoke all on function public.search_ai_context_for_user(uuid, date, date, text[], text[], integer) from public, anon, authenticated;
+grant execute on function public.search_ai_context_for_user(uuid, date, date, text[], text[], integer) to service_role;
+
+create or replace function public.broadcast_ai_companion_changes()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_user uuid := coalesce(new.user_id, old.user_id);
+begin
+  perform realtime.broadcast_changes(
+    'ai-companion:' || target_user::text,
+    TG_OP,
+    TG_OP,
+    TG_TABLE_NAME,
+    TG_TABLE_SCHEMA,
+    new,
+    old
+  );
+  return null;
+end;
+$$;
+
+drop trigger if exists ai_conversations_broadcast on public.ai_conversations;
+create trigger ai_conversations_broadcast
+after insert or update or delete on public.ai_conversations
+for each row execute function public.broadcast_ai_companion_changes();
+
+drop trigger if exists ai_chat_messages_broadcast on public.ai_chat_messages;
+create trigger ai_chat_messages_broadcast
+after insert or update or delete on public.ai_chat_messages
+for each row execute function public.broadcast_ai_companion_changes();
+
+drop trigger if exists ai_memories_broadcast on public.ai_memories;
+create trigger ai_memories_broadcast
+after insert or update or delete on public.ai_memories
+for each row execute function public.broadcast_ai_companion_changes();
+
 -- 私有 Broadcast 负责实时同步，避免不可过滤的 Postgres Changes DELETE 事件。
 do $$
 begin
@@ -879,3 +1092,78 @@ begin
   end if;
 end
 $$;
+
+-- 依赖 integration_tokens / ai_change_proposals 的增量字段必须在旧表创建后执行。
+create table if not exists public.mcp_request_logs (
+  id bigint generated always as identity primary key,
+  user_id uuid references auth.users(id) on delete set null,
+  integration_token_id uuid references public.integration_tokens(id) on delete set null,
+  tool_name text not null check (length(tool_name) between 1 and 80),
+  status text not null check (status in ('succeeded', 'failed', 'denied')),
+  duration_ms integer not null check (duration_ms >= 0),
+  result_count integer not null default 0 check (result_count >= 0),
+  created_at timestamptz not null default now()
+);
+
+alter table public.ai_change_proposals add column if not exists title text default 'TodoList 提案';
+alter table public.ai_change_proposals add column if not exists summary text default '';
+alter table public.ai_change_proposals add column if not exists source_token_id uuid;
+alter table public.ai_change_proposals add column if not exists stable_id uuid not null default gen_random_uuid();
+alter table public.ai_change_proposals add column if not exists execution_results jsonb not null default '[]'::jsonb;
+alter table public.ai_change_proposal_items add column if not exists execution_result jsonb;
+alter table public.ai_change_proposal_items add column if not exists created_todo_id uuid;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'ai_change_proposals_source_token_fkey'
+      and conrelid = 'public.ai_change_proposals'::regclass
+  ) then
+    alter table public.ai_change_proposals
+      add constraint ai_change_proposals_source_token_fkey
+      foreign key (source_token_id) references public.integration_tokens(id) on delete set null;
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'ai_change_proposals_stable_id_key'
+      and conrelid = 'public.ai_change_proposals'::regclass
+  ) then
+    alter table public.ai_change_proposals
+      add constraint ai_change_proposals_stable_id_key unique (stable_id);
+  end if;
+end
+$$;
+
+create index if not exists mcp_request_logs_token_created_idx
+  on public.mcp_request_logs(integration_token_id, created_at desc);
+
+alter table public.mcp_request_logs enable row level security;
+revoke all privileges on table public.mcp_request_logs from anon, authenticated, public;
+
+drop trigger if exists set_ai_conversations_updated_at on public.ai_conversations;
+create trigger set_ai_conversations_updated_at
+before update on public.ai_conversations
+for each row execute function public.set_todos_updated_at();
+
+drop trigger if exists set_ai_memories_updated_at on public.ai_memories;
+create trigger set_ai_memories_updated_at
+before update on public.ai_memories
+for each row execute function public.set_todos_updated_at();
+
+-- 旧段落会重建该策略，因此在文件末尾把 AI 私有频道一并纳入。
+drop policy if exists "Users can receive own todo broadcasts" on realtime.messages;
+create policy "Users can receive own todo broadcasts"
+on realtime.messages for select to authenticated
+using (
+  realtime.messages.extension = 'broadcast'
+  and (select realtime.topic()) in (
+    'todos:' || (select auth.uid())::text,
+    'todo-categories:' || (select auth.uid())::text,
+    'todo-completion-goals:' || (select auth.uid())::text,
+    'todo-completion-reviews:' || (select auth.uid())::text,
+    'daily-reviews:' || (select auth.uid())::text,
+    'work-reviews:' || (select auth.uid())::text,
+    'ai-companion:' || (select auth.uid())::text
+  )
+);

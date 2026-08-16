@@ -1,5 +1,7 @@
 # AI 工作复盘与 Codex CLI 接入设计方案
 
+> **已被替代：** 本文记录旧版“一键 AI 工作复盘”方案。新的产品与实施基线见 [`ai-companion-mcp-design.md`](ai-companion-mcp-design.md)。历史 `ai_review_runs` 数据继续保留，但旧入口不再扩展。
+
 > 文档状态：产品、架构与安全边界已收敛；网页端只读 AI 复盘已完成，变更提案与 Codex MCP 待实现
 >
 > 最后更新：2026-08-16
