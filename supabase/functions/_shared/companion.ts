@@ -144,7 +144,9 @@ export async function planCompanionRetrieval(options: {
   history: Array<{ role: string; content: string }>;
   signal: AbortSignal;
 }): Promise<RetrievalPlan> {
-  const response = await fetchResponse(getOpenAiEndpoint(options.baseUrl, 'responses'), options.apiKey, {
+  let response: Response;
+  try {
+    response = await fetchResponse(getOpenAiEndpoint(options.baseUrl, 'responses'), options.apiKey, {
     model: options.model,
     instructions: PLANNER_INSTRUCTIONS,
     input: [
@@ -155,10 +157,16 @@ export async function planCompanionRetrieval(options: {
     max_output_tokens: 2000,
     store: false,
     text: { format: { type: 'json_schema', name: 'companion_retrieval_plan', strict: true, schema: RETRIEVAL_PLAN_SCHEMA } },
-  }, options.signal);
-  if (!response.ok) throw providerError(response.status);
+    }, options.signal);
+  } catch (error) {
+    // Planning is an optimization. A relay timeout or temporary validation
+    // failure must not prevent the main answer from using a bounded broad search.
+    if (options.signal.aborted) throw error;
+    return fallbackRetrievalPlan(options.question);
+  }
+  if (!response.ok) return fallbackRetrievalPlan(options.question);
   let payload: Record<string, unknown>;
-  try { payload = await response.json(); } catch { throw new HttpError(502, 'invalid_provider_response', '检索规划响应无法解析'); }
+  try { payload = await response.json(); } catch { return fallbackRetrievalPlan(options.question); }
   const rawPlan = outputText(payload).trim();
   // Retrieval planning is optional. Continue with a broad bounded search if a relay returns an empty or non-conforming plan.
   if (!rawPlan) return fallbackRetrievalPlan(options.question);
