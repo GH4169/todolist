@@ -60,6 +60,17 @@ const RETRIEVAL_PLAN_SCHEMA = {
 const PLANNER_INSTRUCTIONS = `你负责为 TodoList AI 伙伴规划检索。只根据当前问题和近期对话，返回检索日期、来源类型和短搜索词。
 日期不明确时使用 null；问题可能与长期模式有关时保留 memory；不要回答用户问题；严格返回 JSON Schema。`;
 
+const FALLBACK_SOURCE_TYPES = ['todo', 'goal', 'completion_review', 'daily_review', 'work_review', 'memory'];
+
+function fallbackRetrievalPlan(question: string): RetrievalPlan {
+  return {
+    date_start: null,
+    date_end: null,
+    source_types: FALLBACK_SOURCE_TYPES,
+    search_terms: question.trim() ? [question.trim().slice(0, 80)] : [],
+  };
+}
+
 const COMPANION_INSTRUCTIONS = `你是 TodoList 的 AI 伙伴：真诚、理性、不迎合，关心用户长期幸福和选择是否可持续，而不只优化任务完成率。
 
 规则：
@@ -140,24 +151,30 @@ export async function planCompanionRetrieval(options: {
       ...options.history,
       { role: 'user', content: options.question },
     ],
-    max_output_tokens: 800,
+    // Reasoning relays may spend part of the budget before emitting the small JSON plan.
+    max_output_tokens: 2000,
     store: false,
     text: { format: { type: 'json_schema', name: 'companion_retrieval_plan', strict: true, schema: RETRIEVAL_PLAN_SCHEMA } },
   }, options.signal);
   if (!response.ok) throw providerError(response.status);
   let payload: Record<string, unknown>;
   try { payload = await response.json(); } catch { throw new HttpError(502, 'invalid_provider_response', '检索规划响应无法解析'); }
+  const rawPlan = outputText(payload).trim();
+  // Retrieval planning is optional. Continue with a broad bounded search if a relay returns an empty or non-conforming plan.
+  if (!rawPlan) return fallbackRetrievalPlan(options.question);
   let parsed: Record<string, unknown>;
-  try { parsed = JSON.parse(outputText(payload)); } catch { throw new HttpError(502, 'invalid_retrieval_plan', '模型没有返回有效的检索计划'); }
+  try { parsed = JSON.parse(rawPlan); } catch { return fallbackRetrievalPlan(options.question); }
   const datePattern = /^\d{4}-\d{2}-\d{2}$/;
   const allowedTypes = new Set(['todo', 'goal', 'completion_review', 'daily_review', 'work_review', 'memory']);
+  const sourceTypes = Array.isArray(parsed.source_types)
+    ? parsed.source_types.filter(value => typeof value === 'string' && allowedTypes.has(value)).slice(0, 6) : [];
+  const searchTerms = Array.isArray(parsed.search_terms)
+    ? parsed.search_terms.filter(value => typeof value === 'string' && value.trim()).map(value => value.trim()).slice(0, 8) : [];
   return {
     date_start: typeof parsed.date_start === 'string' && datePattern.test(parsed.date_start) ? parsed.date_start : null,
     date_end: typeof parsed.date_end === 'string' && datePattern.test(parsed.date_end) ? parsed.date_end : null,
-    source_types: Array.isArray(parsed.source_types)
-      ? parsed.source_types.filter(value => typeof value === 'string' && allowedTypes.has(value)).slice(0, 6) : [],
-    search_terms: Array.isArray(parsed.search_terms)
-      ? parsed.search_terms.filter(value => typeof value === 'string' && value.trim()).map(value => value.trim()).slice(0, 8) : [],
+    source_types: sourceTypes.length ? sourceTypes : FALLBACK_SOURCE_TYPES,
+    search_terms: searchTerms,
   };
 }
 
