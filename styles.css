@@ -4862,6 +4862,94 @@ body.theme-light .composer-planned-date input { color-scheme: light; }
   .work-review-task, .work-review-journal, .work-review-conclusion-actions button { transition: none; }
 }
 
+/* ==================== AI work review ==================== */
+.ai-review-heading { align-items: center; }
+.ai-review-heading > div { min-width: 0; }
+.ai-review-heading > div > span { display: block; margin-top: 5px; color: var(--side-muted); font-size: 0.58rem; }
+.ai-review-generate {
+  min-width: 112px;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--neon-blue) 42%, var(--panel-border));
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--neon-blue) 8%, var(--panel-bg));
+  color: var(--neon-blue);
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+.ai-review-generate svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.ai-review-generate:hover, .ai-review-generate:focus-visible { border-color: var(--neon-blue); background: color-mix(in srgb, var(--neon-blue) 14%, var(--panel-bg)); outline: 0; }
+.ai-review-generate:disabled { cursor: wait; opacity: 0.62; }
+.ai-review-loading { min-height: 104px; display: flex; align-items: center; justify-content: center; gap: 12px; border: 1px dashed var(--panel-border); color: var(--text-dim); font-size: 0.7rem; }
+.ai-review-loading > span { width: 16px; height: 16px; border: 2px solid var(--panel-border); border-top-color: var(--neon-blue); border-radius: 50%; animation: ai-review-spin 800ms linear infinite; }
+@keyframes ai-review-spin { to { transform: rotate(360deg); } }
+.ai-review-empty-state { min-height: 88px; display: grid; place-items: center; padding: 18px; border: 1px dashed var(--panel-border); color: var(--side-muted); font-size: 0.69rem; text-align: center; }
+.ai-review-result { display: grid; gap: 22px; }
+.ai-review-summary { padding: 14px 16px; border-left: 2px solid var(--neon-blue); background: color-mix(in srgb, var(--neon-blue) 5%, var(--panel-bg)); color: var(--text); font-size: 0.76rem; line-height: 1.75; }
+.ai-review-group { display: grid; gap: 9px; }
+.ai-review-group h3 { color: var(--text-dim); font: 700 0.62rem/1.2 var(--utility-font); }
+.ai-review-group.is-highlight h3 { color: var(--neon-green); }
+.ai-review-group.is-blocker h3 { color: var(--neon-pink); }
+.ai-review-group.is-recommendation h3 { color: var(--neon-orange); }
+.ai-review-insights { display: grid; gap: 6px; }
+.ai-review-insight { min-width: 0; padding: 10px 12px; border: 1px solid var(--panel-border); border-radius: 3px; background: var(--panel-bg); }
+.ai-review-insight strong { display: block; color: var(--text); font-size: 0.72rem; }
+.ai-review-insight p { margin-top: 5px; color: var(--text-dim); font-size: 0.69rem; line-height: 1.6; overflow-wrap: anywhere; }
+.ai-review-evidence-links { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.ai-review-evidence-links button { min-height: 25px; max-width: 100%; overflow: hidden; padding: 0 7px; border: 1px solid color-mix(in srgb, var(--neon-blue) 30%, var(--panel-border)); border-radius: 3px; background: transparent; color: var(--neon-blue); font-size: 0.56rem; text-overflow: ellipsis; white-space: nowrap; }
+.ai-review-evidence-links button:hover, .ai-review-evidence-links button:focus-visible { border-color: var(--neon-blue); background: color-mix(in srgb, var(--neon-blue) 8%, transparent); outline: 0; }
+.ai-review-inference { display: block; margin-top: 8px; color: var(--side-muted); font-size: 0.56rem; }
+.ai-review-limitations { padding-top: 13px; border-top: 1px solid var(--panel-border); color: var(--side-muted); }
+.ai-review-limitations strong { font-size: 0.61rem; }
+.ai-review-limitations ul { display: grid; gap: 4px; margin: 7px 0 0; padding-left: 17px; }
+.ai-review-limitations li { font-size: 0.61rem; line-height: 1.5; }
+.ai-review-meta { color: var(--side-muted); font: 600 0.56rem/1.4 var(--utility-font); }
+
+/* ==================== AI settings ==================== */
+.ai-settings-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.settings-section .ai-settings-heading h2 { margin-bottom: 0; }
+.ai-settings-heading p { margin-top: 6px; color: var(--side-muted); font-size: 0.68rem; }
+.ai-credential-state { flex: none; padding: 5px 7px; border: 1px solid var(--panel-border); border-radius: 3px; color: var(--side-muted); font: 700 0.56rem/1 var(--utility-font); }
+.ai-credential-state.is-configured { border-color: color-mix(in srgb, var(--neon-green) 40%, var(--panel-border)); color: var(--neon-green); }
+.ai-credential-state.is-unavailable { border-color: color-mix(in srgb, var(--neon-pink) 36%, var(--panel-border)); color: var(--neon-pink); }
+.ai-credential-form { display: grid; gap: 8px; padding-top: 16px; border-top: 1px solid var(--panel-border); }
+.ai-credential-form > label { color: var(--text-dim); font-size: 0.68rem; }
+.ai-credential-form > label span { color: var(--side-muted); font-size: 0.58rem; }
+.ai-credential-full-input { width: 100%; min-width: 0; height: 42px; padding: 0 11px; border: 1px solid var(--panel-border); border-radius: 3px; background: var(--side-surface); color: var(--text); font-family: var(--utility-font); }
+.ai-credential-full-input:focus { border-color: var(--neon-blue); outline: 2px solid color-mix(in srgb, var(--neon-blue) 16%, transparent); outline-offset: 1px; }
+.ai-credential-input-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.ai-credential-input-row input { min-width: 0; height: 42px; padding: 0 11px; border: 1px solid var(--panel-border); border-radius: 3px; background: var(--side-surface); color: var(--text); font-family: var(--utility-font); }
+.ai-credential-input-row input:focus { border-color: var(--neon-blue); outline: 2px solid color-mix(in srgb, var(--neon-blue) 16%, transparent); outline-offset: 1px; }
+.ai-credential-save, .ai-credential-delete { min-height: 38px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 12px; border-radius: 3px; font-size: 0.65rem; font-weight: 700; }
+.ai-credential-save { border: 1px solid color-mix(in srgb, var(--neon-blue) 38%, var(--panel-border)); background: color-mix(in srgb, var(--neon-blue) 10%, var(--panel-bg)); color: var(--neon-blue); }
+.ai-credential-delete { border: 1px solid color-mix(in srgb, var(--neon-pink) 32%, var(--panel-border)); background: transparent; color: var(--neon-pink); }
+.ai-credential-save svg, .ai-credential-delete svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.ai-credential-save:hover, .ai-credential-save:focus-visible { border-color: var(--neon-blue); outline: 0; }
+.ai-credential-delete:hover, .ai-credential-delete:focus-visible { border-color: var(--neon-pink); background: var(--danger-soft); outline: 0; }
+.ai-credential-save:disabled, .ai-credential-delete:disabled, .ai-credential-input-row input:disabled { cursor: not-allowed; opacity: 0.55; }
+.ai-credential-actions { min-height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ai-credential-actions p { color: var(--text-dim); font-size: 0.64rem; }
+
+@media (max-width: 620px) {
+  .ai-review-heading { align-items: flex-start; }
+  .ai-review-generate { min-width: 102px; }
+  .ai-review-summary { padding: 12px; }
+  .ai-review-evidence-links button { white-space: normal; text-align: left; }
+  .ai-settings-heading { display: grid; }
+  .ai-credential-state { justify-self: start; }
+  .ai-credential-input-row { grid-template-columns: 1fr; }
+  .ai-credential-save { width: 100%; }
+  .ai-credential-actions { align-items: flex-start; flex-direction: column; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-review-loading > span { animation: none; }
+}
+
 /* Sidebar information hierarchy: utilities at the top, navigation in the middle, creation at the bottom. */
 .sidebar-content {
   padding: 20px 14px 14px;

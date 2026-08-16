@@ -32,6 +32,7 @@ TodoList 帮助你整理日常工作：使用自定义分组收纳父任务、�
 - 为父任务和子任务设置按日期保存的完成目标；卡片聚焦当前或最近目标，历史目标可在编辑面板中查看、修改和删除。
 - 按日期评价父任务和子任务的每日完成情况；已安排任务到次日仍未评价时自动记为“未推进”，并保留当天目标快照供后续复盘。
 - 在今日待办中记录按日期保存的“今日复盘”，整理计划外事务、探索、阻塞依赖和次日调整，并可从历史列表补充或修改往日记录；详见 [`docs/daily-review-journal-design.md`](docs/daily-review-journal-design.md)。
+- 在近期复盘中生成有证据引用的 AI 工作复盘，查看重要产出、阻塞与偏差、下一步建议，并从引用直接回到对应任务、评价或工作日记录。
 - 创建、排序、行内重命名和删除自定义分组，将父任务连同子任务拖动或批量移动到其他分组。
 - 首次使用时从“今日待办”开始，之后返回上次打开的今日、明日、后续待办或任务分组视图。
 - 默认显示进行中的任务，已完成任务收纳在列表底部的可记忆折叠区。
@@ -45,10 +46,28 @@ TodoList 帮助你整理日常工作：使用自定义分组收纳父任务、�
 - 使用语义化 HTML、响应式 CSS 和模块化 Vanilla JS，无需前端框架与构建步骤。
 - 使用 Supabase Auth 和 PostgreSQL 持久化账号与任务数据，并通过行级安全策略和用户级关系实现数据隔离。
 - 通过私有 Supabase Realtime Broadcast 频道，在多个在线客户端之间同步任务和分组变更。
+- 使用 Supabase Edge Functions 在服务端构建复盘上下文并调用 OpenAI Responses API；用户 API Key 经过 AES-256-GCM 加密后保存，明文不会写入浏览器存储。
 - 将任务内容、状态、描述、界面状态和排序结果持久化至云端，静态前端通过 GitHub Pages 部署。
 
 > 💡 Tip: 如需查看完整效果，请访问[在线体验](https://gh4169.github.io/todolist/)地址。
 
 ## 数据库升级
 
-部署本版本前，请在 Supabase SQL Editor 中完整执行最新的 [`supabase-schema.sql`](supabase-schema.sql)。脚本会增量创建分组、日期安排、完成目标、任务级完成评价和今日复盘所需的数据结构；已有任务不会被修改或删除。
+部署本版本前，请在 Supabase SQL Editor 中完整执行最新的 [`supabase-schema.sql`](supabase-schema.sql)。脚本会增量创建分组、日期安排、完成目标、任务级完成评价、工作复盘和 AI 运行记录所需的数据结构；已有任务不会被修改或删除。
+
+## AI 工作复盘部署
+
+当前版本已实现网页端只读 AI 复盘：用户在设置中保存自己的 AI 服务 API Key，服务端验证并加密保存；近期复盘页按当前 7 天范围生成结构化分析。任务变更提案和 Codex CLI MCP 接入仍属于下一阶段，完整边界见 [`docs/ai-review-codex-integration-design.md`](docs/ai-review-codex-integration-design.md)。
+
+1. 安装并登录 Supabase CLI，然后把仓库关联到目标项目。
+2. 复制 [`supabase/functions/.env.example`](supabase/functions/.env.example) 为本地私密配置，使用 `openssl rand -base64 32` 生成 `AI_CREDENTIAL_MASTER_KEY`。不要提交实际密钥。
+3. 根据部署域名设置 `ALLOWED_ORIGINS`。网页设置页可以为每个用户填写自己的 `Base URL` 和模型；`OPENAI_BASE_URL`、`OPENAI_MODEL` 只作为旧凭据或首次打开设置页时的默认值。服务地址必须支持 `/models`、`/responses` 和结构化输出。需要收紧外部访问时，可设置 `AI_PROVIDER_ALLOWED_HOSTS` 为逗号分隔的精确域名或域名后缀。
+4. 上传配置并部署两个函数：
+
+```bash
+npx supabase secrets set --env-file supabase/functions/.env
+npx supabase functions deploy ai-credential
+npx supabase functions deploy ai-review
+```
+
+Supabase 会向函数提供 `SUPABASE_URL`、`SUPABASE_ANON_KEY` 和 `SUPABASE_SERVICE_ROLE_KEY`，不要把这些服务端凭据放进网页代码。部署后，在设置页先保存并验证 API Key，再到“近期复盘”生成分析。

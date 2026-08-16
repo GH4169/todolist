@@ -20,6 +20,8 @@ let categories = [];
 let completionGoals = [];
 let completionReviews = [];
 let dailyReviews = [];
+let workReviews = [];
+let aiReviewRuns = [];
 let currentUserId = null;
 
 function setCurrentUser(user) {
@@ -29,6 +31,8 @@ function setCurrentUser(user) {
   completionGoals = [];
   completionReviews = [];
   dailyReviews = [];
+  workReviews = [];
+  aiReviewRuns = [];
 }
 
 function requireCurrentUserId() {
@@ -122,6 +126,36 @@ function mapDailyReviewRow(row) {
 function compareDailyReviewDate(a, b) {
   return b.reviewDate.localeCompare(a.reviewDate)
     || (b.updatedAt || 0) - (a.updatedAt || 0);
+}
+
+function mapWorkReviewRow(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    rangeStart: row.range_start,
+    rangeEnd: row.range_end,
+    content: row.content,
+    createdAt: parseTime(row.created_at),
+    updatedAt: parseTime(row.updated_at),
+  };
+}
+
+function mapAiReviewRunRow(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    rangeStart: row.range_start,
+    rangeEnd: row.range_end,
+    status: row.status,
+    provider: row.provider,
+    model: row.model || null,
+    promptVersion: row.prompt_version,
+    contextStats: row.context_stats || {},
+    result: row.result || null,
+    errorCode: row.error_code || null,
+    createdAt: parseTime(row.created_at),
+    completedAt: parseTime(row.completed_at),
+  };
 }
 
 function getStorageLocalDateKey(date = new Date()) {
@@ -488,6 +522,157 @@ async function deleteDailyReviewRecord(id) {
   if (error) throw error;
 }
 
+async function loadWorkReviews() {
+  const userId = requireCurrentUserId();
+  const { data, error } = await supabaseClient
+    .from('work_reviews')
+    .select('*')
+    .eq('user_id', userId)
+    .order('range_end', { ascending: false })
+    .order('updated_at', { ascending: false });
+
+  if (error) throw error;
+  workReviews = data.map(mapWorkReviewRow);
+  return workReviews;
+}
+
+function getWorkReviewForRange(rangeStart, rangeEnd) {
+  return workReviews.find(review => (
+    review.rangeStart === rangeStart && review.rangeEnd === rangeEnd
+  )) || null;
+}
+
+async function upsertWorkReviewRecord({ rangeStart, rangeEnd, content }) {
+  const userId = requireCurrentUserId();
+  const normalizedContent = content.trim();
+  if (!rangeStart || !rangeEnd || rangeStart > rangeEnd) {
+    throw new Error('工作复盘日期范围无效');
+  }
+  if (normalizedContent.length < 1 || normalizedContent.length > 3000) {
+    throw new Error('复盘结论需要在 1 到 3000 个字符之间');
+  }
+  const { data, error } = await supabaseClient
+    .from('work_reviews')
+    .upsert({
+      range_start: rangeStart,
+      range_end: rangeEnd,
+      content: normalizedContent,
+      user_id: userId,
+    }, { onConflict: 'user_id,range_start,range_end' })
+    .select()
+    .single();
+  if (error) throw error;
+  const mapped = mapWorkReviewRow(data);
+  const existingIndex = workReviews.findIndex(review => review.id === mapped.id);
+  if (existingIndex === -1) workReviews.unshift(mapped);
+  else workReviews[existingIndex] = mapped;
+  return mapped;
+}
+
+async function deleteWorkReviewRecord(id) {
+  const userId = requireCurrentUserId();
+  const { error } = await supabaseClient
+    .from('work_reviews')
+    .delete()
+    .eq('id', id)
+    .eq('user_id', userId);
+  if (error) throw error;
+  workReviews = workReviews.filter(review => review.id !== id);
+}
+
+async function loadAiReviewRuns(limit = 20) {
+  const userId = requireCurrentUserId();
+  const { data, error } = await supabaseClient
+    .from('ai_review_runs')
+    .select('id,user_id,range_start,range_end,status,provider,model,prompt_version,context_stats,result,error_code,created_at,completed_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  aiReviewRuns = data.map(mapAiReviewRunRow);
+  return aiReviewRuns;
+}
+
+function getLatestAiReviewRunForRange(rangeStart, rangeEnd) {
+  return aiReviewRuns.find(run => run.rangeStart === rangeStart && run.rangeEnd === rangeEnd) || null;
+}
+
+async function invokeAiFunction(name, { method = 'POST', body } = {}) {
+  const { data: sessionData, error: sessionError } = await supabaseClient.auth.getSession();
+  if (sessionError || !sessionData.session) throw new Error('登录状态已失效，请重新登录');
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${sessionData.session.access_token}`,
+      apikey: SUPABASE_ANON_KEY,
+      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  let payload = {};
+  try {
+    payload = await response.json();
+  } catch {
+    // A deployment or gateway error may not include a JSON body.
+  }
+  if (!response.ok) {
+    const error = new Error(payload?.error?.message || `AI 服务请求失败 (${response.status})`);
+    error.code = payload?.error?.code || 'ai_service_error';
+    error.status = response.status;
+    throw error;
+  }
+  return payload;
+}
+
+function getAiCredentialStatus() {
+  return invokeAiFunction('ai-credential', { method: 'GET' });
+}
+
+function saveAiCredential({ apiKey = '', baseUrl, model }) {
+  return invokeAiFunction('ai-credential', {
+    body: {
+      api_key: apiKey,
+      base_url: baseUrl,
+      model,
+    },
+  });
+}
+
+function deleteAiCredential() {
+  return invokeAiFunction('ai-credential', { method: 'DELETE' });
+}
+
+async function generateAiReview({ rangeStart, rangeEnd, timezone, locale = 'zh-CN' }) {
+  const userId = requireCurrentUserId();
+  const payload = await invokeAiFunction('ai-review', {
+    body: {
+      range_start: rangeStart,
+      range_end: rangeEnd,
+      timezone,
+      locale,
+    },
+  });
+  const mapped = mapAiReviewRunRow({
+    id: payload.id,
+    user_id: userId,
+    range_start: payload.range_start,
+    range_end: payload.range_end,
+    status: payload.status,
+    provider: payload.provider,
+    model: payload.model,
+    prompt_version: 'review-v1',
+    context_stats: payload.context_stats,
+    result: payload.result,
+    error_code: null,
+    created_at: new Date().toISOString(),
+    completed_at: payload.completed_at,
+  });
+  if (currentUserId === userId) {
+    aiReviewRuns = [mapped, ...aiReviewRuns.filter(run => run.id !== mapped.id)];
+  }
+  return mapped;
+}
+
 /** 新增父任务或子任务，并返回服务器生成 ID 后的完整记录。 */
 async function createTodoRecord({ text, parentId = null, categoryId = null, position = 0, plannedDate = null }) {
   const userId = requireCurrentUserId();
@@ -745,6 +930,20 @@ async function subscribeDailyReviewChanges(userId, onChange) {
     .subscribe();
 }
 
+async function subscribeWorkReviewChanges(userId, onChange) {
+  if (!userId || userId !== currentUserId) {
+    throw new Error('无法为未登录用户订阅工作复盘');
+  }
+
+  await supabaseClient.realtime.setAuth();
+  return supabaseClient
+    .channel(`work-reviews:${userId}`, { config: { private: true } })
+    .on('broadcast', { event: 'INSERT' }, message => onChange('INSERT', message))
+    .on('broadcast', { event: 'UPDATE' }, message => onChange('UPDATE', message))
+    .on('broadcast', { event: 'DELETE' }, message => onChange('DELETE', message))
+    .subscribe();
+}
+
 function unsubscribeTodoChanges(channel) {
   if (channel) supabaseClient.removeChannel(channel);
 }
@@ -762,5 +961,9 @@ function unsubscribeCompletionReviewChanges(channel) {
 }
 
 function unsubscribeDailyReviewChanges(channel) {
+  if (channel) supabaseClient.removeChannel(channel);
+}
+
+function unsubscribeWorkReviewChanges(channel) {
   if (channel) supabaseClient.removeChannel(channel);
 }

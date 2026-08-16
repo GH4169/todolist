@@ -1,3 +1,7 @@
 output/playwright/*
 !output/playwright/readme-desktop.png
 !output/playwright/readme-mobile.png
+
+# Local Supabase function secrets
+supabase/functions/.env
+supabase/functions/.env.local
