@@ -1,7 +1,7 @@
 import { createMcpHandler, McpServer } from 'npm:@modelcontextprotocol/server@2.0.0';
 // MCP server v2 uses Zod 4 for tool schema conversion.
 import { z } from 'npm:zod@4.2.0';
-import { authenticateIntegrationToken, type IntegrationIdentity, writeMcpLog } from '../_shared/integration-auth.ts';
+import { authenticateMcpRequest, type IntegrationIdentity, writeMcpLog } from '../_shared/integration-auth.ts';
 import { HttpError } from '../_shared/http.ts';
 import { createChangeProposal, getChangeProposal } from '../_shared/proposals.ts';
 
@@ -35,7 +35,7 @@ async function withLog<T>(identity: IntegrationIdentity | null, toolName: string
 
 async function loadIdentity(request: Request): Promise<IntegrationIdentity | null> {
   if (!request.headers.get('authorization')) return null;
-  return authenticateIntegrationToken(request);
+  return authenticateMcpRequest(request);
 }
 
 function makeServer(identity: IntegrationIdentity | null) {
@@ -175,52 +175,71 @@ const handler = createMcpHandler(async context => {
   return makeServer(identity);
 }, { legacy: 'stateless', responseMode: 'auto' });
 
-const PUBLIC_MCP_METHODS = new Set([
-  'initialize', 'notifications/initialized', 'ping', 'tools/list',
-  'resources/list', 'resources/templates/list', 'prompts/list',
-]);
-
-async function requestMethod(request: Request) {
-  if (request.method !== 'POST') return null;
-  try {
-    const body = await request.clone().json();
-    return typeof body?.method === 'string' ? body.method : null;
-  } catch {
-    return null;
+function mcpPublicUrl(request?: Request) {
+  const configured = Deno.env.get('MCP_PUBLIC_URL')?.trim();
+  if (configured) return configured.replace(/\/$/, '');
+  if (request) {
+    const url = new URL(request.url);
+    const marker = '/functions/v1/todolist-mcp';
+    if (url.pathname.includes(marker)) return `${url.origin}${marker}`;
   }
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')?.replace(/\/$/, '') || '';
+  return `${supabaseUrl}/functions/v1/todolist-mcp`;
 }
 
-function authChallenge(error: HttpError) {
+function resourceMetadataUrl(request?: Request) {
+  return `${mcpPublicUrl(request)}/oauth-protected-resource`;
+}
+
+function oauthResourceMetadata(request: Request) {
+  const path = new URL(request.url).pathname.replace(/\/$/, '');
+  if (!path.endsWith('/oauth-protected-resource')) return null;
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')?.replace(/\/$/, '') || '';
+  const headers = new Headers({
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'public, max-age=300',
+    'Access-Control-Allow-Origin': '*',
+  });
+  if (request.method === 'HEAD') return new Response(null, { status: 200, headers });
+  if (request.method !== 'GET') return new Response(null, { status: 405, headers: { ...Object.fromEntries(headers), Allow: 'GET, HEAD' } });
+  return new Response(JSON.stringify({
+    resource: mcpPublicUrl(request),
+    authorization_servers: [`${supabaseUrl}/auth/v1`],
+    scopes_supported: ['email', 'profile'],
+    resource_name: 'TodoList MCP',
+  }), { status: 200, headers });
+}
+
+function authChallenge(request: Request, error: HttpError) {
+  const description = error.status === 403 ? 'Insufficient scope' : 'Authorization required';
   const headers = new Headers({
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
-    'WWW-Authenticate': 'Bearer realm="todolist-mcp", scope="review:read proposal:write"',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Expose-Headers': 'WWW-Authenticate',
+    'WWW-Authenticate': `Bearer error="invalid_token", error_description="${description}", scope="email profile", resource_metadata="${resourceMetadataUrl(request)}"`,
   });
-  return new Response(JSON.stringify({ error: { code: error.code, message: error.message } }), { status: error.status, headers });
+  return new Response(JSON.stringify({ error: 'invalid_token', error_description: error.message }), { status: error.status, headers });
 }
 
 Deno.serve(async request => {
+  const metadataResponse = oauthResourceMetadata(request);
+  if (metadataResponse) return metadataResponse;
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: {
     'Access-Control-Allow-Origin': request.headers.get('origin') || '*',
     'Access-Control-Allow-Headers': 'authorization, content-type, mcp-protocol-version, mcp-session-id',
     'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+    'Access-Control-Expose-Headers': 'WWW-Authenticate',
   } });
   try {
-    // Let clients perform the MCP initialize/tools-list handshake before
-    // credentials are supplied, but reject all data operations with a proper
-    // 401 challenge instead of allowing the SDK to turn auth failures into a
-    // generic JSON-RPC 500 response.
-    const method = await requestMethod(request);
-    if (method && !PUBLIC_MCP_METHODS.has(method) && !request.headers.get('authorization')) {
-      return authChallenge(new HttpError(401, 'invalid_integration_token', '缺少集成令牌'));
+    if (!request.headers.get('authorization')) {
+      return authChallenge(request, new HttpError(401, 'invalid_integration_token', '缺少集成令牌'));
     }
-    if (request.headers.get('authorization')) {
-      try {
-        await authenticateIntegrationToken(request);
-      } catch (error) {
-        if (error instanceof HttpError) return authChallenge(error);
-        throw error;
-      }
+    try {
+      await authenticateMcpRequest(request);
+    } catch (error) {
+      if (error instanceof HttpError) return authChallenge(request, error);
+      throw error;
     }
     const response = await handler.fetch(request);
     const headers = new Headers(response.headers);

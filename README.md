@@ -86,14 +86,16 @@ bearer_token_env_var = "TODOLIST_MCP_TOKEN"
 
 MCP has read-only tools plus `create_change_proposal`; proposals expire after seven days and require per-item web confirmation before any permitted operation is applied.
 
+Gemini uses standard OAuth 2.1 rather than the Codex integration token above. In Supabase Dashboard, enable `Authentication -> OAuth Server`, set the authorization path to `/todolist/`, and enable dynamic client registration. The MCP server advertises Supabase Auth through Protected Resource Metadata, while the TodoList web app presents the user consent screen.
+
 ### Connect Gemini Spark
 
-1. In TodoList, open `AI Companion -> Codex Integration`, create a token with `review:read` and `proposal:write`, and keep the one-time plaintext private.
-2. In Gemini web, open `Settings & help -> Connected Apps -> Custom apps for Spark` and enter:
+1. In Gemini web, open `Settings & help -> Connected Apps -> Custom apps for Spark` and enter:
 
    `https://zfxvwlddhxhjumwedsjt.supabase.co/functions/v1/todolist-mcp`
 
-3. If Gemini shows `Advanced features` with `Client ID` and `Client secret`, use `todolist` as the client ID and paste the `tdl_...` integration token as the client secret. The server accepts both Basic credentials and `Authorization: Bearer` credentials.
-4. After connecting, type `@`, select TodoList, and test with “List my recent open tasks”. Reads are data-safe; changes are saved as proposals and still require item-by-item confirmation in TodoList.
+2. Leave Advanced features closed. No client ID, client secret, or `tdl_...` token is needed. After Next, Gemini opens the TodoList login and consent page.
+3. Sign in with the TodoList account, review the requester and permissions, and choose Allow access.
+4. Back in Gemini, type `@`, select TodoList, and test with “List my recent open tasks”. Reads are data-safe; changes are saved as proposals and still require item-by-item confirmation in TodoList.
 
-Never put the token in the URL or commit it to Git. Google currently limits Gemini custom Connected Apps to eligible personal accounts in supported regions with Keep Activity enabled.
+Never put a token in the URL or give Gemini the Codex integration token. Google currently limits Gemini custom Connected Apps to eligible personal accounts in supported regions with Keep Activity enabled.

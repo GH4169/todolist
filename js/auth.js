@@ -30,6 +30,16 @@ const profileAvatarInitial = document.getElementById('profileAvatarInitial');
 const profilePreviewName = document.getElementById('profilePreviewName');
 const profilePreviewEmail = document.getElementById('profilePreviewEmail');
 const saveProfileBtn = document.getElementById('saveProfileBtn');
+const oauthConsentView = document.getElementById('oauthConsentView');
+const oauthConsentSubtitle = document.getElementById('oauthConsentSubtitle');
+const oauthConsentDetails = document.getElementById('oauthConsentDetails');
+const oauthConsentStatus = document.getElementById('oauthConsentStatus');
+const oauthClientName = document.getElementById('oauthClientName');
+const oauthAccountEmail = document.getElementById('oauthAccountEmail');
+const oauthRedirectHost = document.getElementById('oauthRedirectHost');
+const approveOAuthBtn = document.getElementById('approveOAuthBtn');
+const denyOAuthBtn = document.getElementById('denyOAuthBtn');
+const oauthAuthorizationId = new URLSearchParams(window.location.search).get('authorization_id');
 
 let visibleUserId = null;
 let visibleUser = null;
@@ -221,6 +231,74 @@ function showLoginForm() {
   setRecoveryMessage();
 }
 
+function setOAuthConsentBusy(busy) {
+  approveOAuthBtn.disabled = busy;
+  denyOAuthBtn.disabled = busy;
+}
+
+function oauthRedirectLabel(value) {
+  try {
+    const url = new URL(value);
+    return url.host || url.protocol.replace(':', '');
+  } catch {
+    return 'Gemini';
+  }
+}
+
+async function showOAuthConsent(user) {
+  visibleUserId = null;
+  visibleUser = user;
+  stopTodoApp();
+  appView.hidden = true;
+  authView.hidden = true;
+  oauthConsentView.hidden = false;
+  oauthConsentDetails.hidden = true;
+  oauthConsentSubtitle.textContent = '正在读取授权请求...';
+  setStatusMessage(oauthConsentStatus, '');
+  setOAuthConsentBusy(true);
+
+  try {
+    const oauthApi = supabaseClient.auth.oauth;
+    if (!oauthApi?.getAuthorizationDetails) throw new Error('当前浏览器中的 Supabase SDK 不支持 OAuth 授权');
+    const { data, error } = await oauthApi.getAuthorizationDetails(oauthAuthorizationId);
+    if (error) throw error;
+    if (!data) throw new Error('授权请求不存在或已经过期');
+    if (!Object.prototype.hasOwnProperty.call(data, 'authorization_id')) {
+      if (!data.redirect_url) throw new Error('授权请求缺少返回地址');
+      window.location.replace(data.redirect_url);
+      return;
+    }
+
+    oauthClientName.textContent = data.client?.name || 'Gemini';
+    oauthAccountEmail.textContent = user.email || '当前 TodoList 账号';
+    oauthRedirectHost.textContent = oauthRedirectLabel(data.redirect_uri);
+    oauthConsentSubtitle.textContent = `${oauthClientName.textContent} 正在请求访问你的 TodoList`;
+    oauthConsentDetails.hidden = false;
+    setOAuthConsentBusy(false);
+  } catch (error) {
+    oauthConsentSubtitle.textContent = '无法读取授权请求';
+    setStatusMessage(oauthConsentStatus, error.message || '授权请求无效或已过期', 'error');
+  }
+}
+
+async function decideOAuth(approved) {
+  if (!oauthAuthorizationId) return;
+  setOAuthConsentBusy(true);
+  setStatusMessage(oauthConsentStatus, approved ? '正在授权...' : '正在拒绝...');
+  try {
+    const oauthApi = supabaseClient.auth.oauth;
+    const action = approved ? oauthApi?.approveAuthorization : oauthApi?.denyAuthorization;
+    if (!action) throw new Error('当前浏览器中的 Supabase SDK 不支持 OAuth 授权');
+    const { data, error } = await action.call(oauthApi, oauthAuthorizationId, { skipBrowserRedirect: true });
+    if (error) throw error;
+    if (!data?.redirect_url) throw new Error('授权服务没有返回跳转地址');
+    window.location.assign(data.redirect_url);
+  } catch (error) {
+    setStatusMessage(oauthConsentStatus, error.message || '处理授权请求失败', 'error');
+    setOAuthConsentBusy(false);
+  }
+}
+
 function showPasswordRecovery(session) {
   if (!session?.user) {
     passwordRecoveryMode = false;
@@ -305,6 +383,11 @@ async function applySession(session) {
   if (passwordRecoveryMode) return;
   const user = session?.user || null;
   if (user) {
+    if (oauthAuthorizationId) {
+      await showOAuthConsent(user);
+      return;
+    }
+    oauthConsentView.hidden = true;
     authView.hidden = true;
     appView.hidden = false;
     visibleUser = user;
@@ -321,8 +404,10 @@ async function applySession(session) {
   visibleUser = null;
   stopTodoApp();
   appView.hidden = true;
+  oauthConsentView.hidden = true;
   authView.hidden = false;
   showLoginForm();
+  if (oauthAuthorizationId) setAuthMessage('请先登录 TodoList，再确认 Gemini 的访问请求。');
   userNickname.textContent = '用户';
   userEmail.textContent = '';
   userAvatarInitial.textContent = '用';
@@ -343,6 +428,8 @@ editProfileBtn.addEventListener('click', openProfileEditor);
 profileForm.addEventListener('submit', saveProfile);
 profileNicknameInput.addEventListener('input', updateProfilePreview);
 logoutBtn.addEventListener('click', logout);
+approveOAuthBtn.addEventListener('click', () => decideOAuth(true));
+denyOAuthBtn.addEventListener('click', () => decideOAuth(false));
 
 supabaseClient.auth.onAuthStateChange((event, session) => {
   // 将异步数据加载移出 Auth 回调，避免阻塞 Supabase 内部会话锁。

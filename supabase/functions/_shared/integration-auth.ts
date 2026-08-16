@@ -31,7 +31,7 @@ export function createServiceClient() {
 
 export type IntegrationIdentity = {
   userId: string;
-  tokenId: string;
+  tokenId: string | null;
   scopes: string[];
   serviceClient: SupabaseClient;
 };
@@ -43,8 +43,7 @@ function tokenFromAuthorization(authorization: string | null) {
     try {
       const decoded = atob(authorization.slice(6).trim());
       const separator = decoded.indexOf(':');
-      // Gemini's advanced MCP credentials are sent as HTTP Basic auth. The
-      // integration token is the client secret; the client id is ignored.
+      // Retained for clients that expose only HTTP Basic configuration.
       return separator >= 0 ? decoded.slice(separator + 1).trim() : '';
     } catch {
       return '';
@@ -53,24 +52,42 @@ function tokenFromAuthorization(authorization: string | null) {
   return '';
 }
 
-export async function authenticateIntegrationToken(request: Request, requiredScope?: string): Promise<IntegrationIdentity> {
+export async function authenticateMcpRequest(request: Request, requiredScope?: string): Promise<IntegrationIdentity> {
   const token = tokenFromAuthorization(request.headers.get('authorization'));
-  if (!token.startsWith('tdl_') || token.length < 30 || token.length > 100) {
+  if (!token) {
     throw new HttpError(401, 'invalid_integration_token', '集成令牌无效或已过期');
   }
   const serviceClient = createServiceClient();
-  const tokenHash = await hashIntegrationToken(token);
-  const { data, error } = await serviceClient.from('integration_tokens')
-    .select('id,user_id,scopes,expires_at,revoked_at').eq('token_hash', tokenHash).maybeSingle();
-  if (error || !data || data.revoked_at || new Date(data.expires_at).getTime() <= Date.now()) {
-    throw new HttpError(401, 'invalid_integration_token', '集成令牌无效或已过期');
+
+  if (token.startsWith('tdl_')) {
+    if (token.length < 30 || token.length > 100) {
+      throw new HttpError(401, 'invalid_integration_token', '集成令牌无效或已过期');
+    }
+    const tokenHash = await hashIntegrationToken(token);
+    const { data, error } = await serviceClient.from('integration_tokens')
+      .select('id,user_id,scopes,expires_at,revoked_at').eq('token_hash', tokenHash).maybeSingle();
+    if (error || !data || data.revoked_at || new Date(data.expires_at).getTime() <= Date.now()) {
+      throw new HttpError(401, 'invalid_integration_token', '集成令牌无效或已过期');
+    }
+    const scopes = Array.isArray(data.scopes) ? data.scopes : [];
+    if (requiredScope && !scopes.includes(requiredScope)) {
+      throw new HttpError(403, 'integration_scope_required', '集成令牌没有执行此操作的权限');
+    }
+    await serviceClient.from('integration_tokens').update({ last_used_at: new Date().toISOString() }).eq('id', data.id);
+    return { userId: data.user_id, tokenId: data.id, scopes, serviceClient };
   }
-  const scopes = Array.isArray(data.scopes) ? data.scopes : [];
+
+  // Supabase OAuth access tokens are regular authenticated-user JWTs. Calling
+  // getUser validates the signature, expiration, issuer, and current user.
+  const { data, error } = await serviceClient.auth.getUser(token);
+  if (error || !data.user) {
+    throw new HttpError(401, 'invalid_oauth_token', 'OAuth 访问令牌无效或已过期');
+  }
+  const scopes = ['review:read', 'proposal:write'];
   if (requiredScope && !scopes.includes(requiredScope)) {
     throw new HttpError(403, 'integration_scope_required', '集成令牌没有执行此操作的权限');
   }
-  await serviceClient.from('integration_tokens').update({ last_used_at: new Date().toISOString() }).eq('id', data.id);
-  return { userId: data.user_id, tokenId: data.id, scopes, serviceClient };
+  return { userId: data.user.id, tokenId: null, scopes, serviceClient };
 }
 
 export async function writeMcpLog(identity: IntegrationIdentity | null, options: {

@@ -56,6 +56,46 @@
     </section>
   </main>
 
+  <main class="auth-view oauth-consent-view" id="oauthConsentView" hidden>
+    <section class="auth-panel oauth-consent-panel" aria-labelledby="oauthConsentTitle">
+      <div class="auth-brand-lockup">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.4c0 4.7 3.2 8.1 7.5 9.6 4.3-1.5 7.5-4.9 7.5-9.6V6L12 3Z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></svg>
+        </div>
+        <div class="auth-brand">
+          <h1 id="oauthConsentTitle">允许访问 TodoList？</h1>
+          <p id="oauthConsentSubtitle">正在读取授权请求...</p>
+        </div>
+      </div>
+
+      <div class="oauth-consent-details" id="oauthConsentDetails" hidden>
+        <dl class="oauth-client-meta">
+          <div><dt>请求方</dt><dd id="oauthClientName">Gemini</dd></div>
+          <div><dt>当前账号</dt><dd id="oauthAccountEmail"></dd></div>
+          <div><dt>返回地址</dt><dd id="oauthRedirectHost"></dd></div>
+        </dl>
+
+        <div class="oauth-permission-list" aria-label="请求的权限">
+          <div>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+            <span><strong>读取记录</strong><small>任务、目标、评价、复盘和已确认记忆</small></span>
+          </div>
+          <div>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16M6 16l9.5-9.5 2 2L8 18H6v-2Z"/></svg>
+            <span><strong>保存变更提案</strong><small>只能创建待确认提案，不能直接修改任务</small></span>
+          </div>
+        </div>
+
+        <p class="oauth-consent-note">TodoList 不会向请求方提供密码或登录凭据。你可以随时在 Gemini 或 Supabase 中撤销访问。</p>
+        <div class="auth-actions oauth-consent-actions">
+          <button class="auth-secondary" id="denyOAuthBtn" type="button">拒绝</button>
+          <button class="auth-primary" id="approveOAuthBtn" type="button">允许访问</button>
+        </div>
+      </div>
+      <p class="auth-message oauth-consent-status" id="oauthConsentStatus" role="status" aria-live="polite"></p>
+    </section>
+  </main>
+
   <div class="app-layout" id="appView" hidden>
     <div class="app-shell">
       <aside class="side-col" id="sidebar" aria-label="任务分组导航">
