@@ -1,5 +1,6 @@
 import { createMcpHandler, McpServer } from 'npm:@modelcontextprotocol/server@2.0.0';
-import { z } from 'npm:zod@3.25.76';
+// MCP server v2 uses Zod 4 for tool schema conversion.
+import { z } from 'npm:zod@4.2.0';
 import { authenticateIntegrationToken, type IntegrationIdentity, writeMcpLog } from '../_shared/integration-auth.ts';
 import { HttpError } from '../_shared/http.ts';
 import { createChangeProposal, getChangeProposal } from '../_shared/proposals.ts';
@@ -18,7 +19,8 @@ function jsonToolResult(value: unknown) {
   };
 }
 
-async function withLog<T>(identity: IntegrationIdentity, toolName: string, handler: () => Promise<{ value: T; count?: number }>) {
+async function withLog<T>(identity: IntegrationIdentity | null, toolName: string, handler: () => Promise<{ value: T; count?: number }>) {
+  if (!identity) throw new HttpError(401, 'invalid_integration_token', '此 MCP 操作需要 TodoList 集成令牌');
   const startedAt = performance.now();
   try {
     const result = await handler();
@@ -31,11 +33,12 @@ async function withLog<T>(identity: IntegrationIdentity, toolName: string, handl
   }
 }
 
-async function loadIdentity(request: Request) {
+async function loadIdentity(request: Request): Promise<IntegrationIdentity | null> {
+  if (!request.headers.get('authorization')) return null;
   return authenticateIntegrationToken(request);
 }
 
-function makeServer(identity: IntegrationIdentity) {
+function makeServer(identity: IntegrationIdentity | null) {
   const server = new McpServer(SERVER_INFO);
 
   server.registerTool('search_context', {
@@ -137,7 +140,7 @@ function makeServer(identity: IntegrationIdentity) {
         operation: z.enum(['reschedule_task', 'create_task', 'create_subtask', 'set_completion_goal']),
         target_todo_id: z.string().uuid().nullable().optional(),
         expected_updated_at: z.string().nullable().optional(),
-        payload: z.record(z.unknown()),
+        payload: z.record(z.string(), z.unknown()),
         reason: z.string().min(1).max(1000),
         evidence_refs: z.array(z.string().max(100)).max(30).optional(),
         idempotency_key: z.string().uuid().optional(),
@@ -172,6 +175,30 @@ const handler = createMcpHandler(async context => {
   return makeServer(identity);
 }, { legacy: 'stateless', responseMode: 'auto' });
 
+const PUBLIC_MCP_METHODS = new Set([
+  'initialize', 'notifications/initialized', 'ping', 'tools/list',
+  'resources/list', 'resources/templates/list', 'prompts/list',
+]);
+
+async function requestMethod(request: Request) {
+  if (request.method !== 'POST') return null;
+  try {
+    const body = await request.clone().json();
+    return typeof body?.method === 'string' ? body.method : null;
+  } catch {
+    return null;
+  }
+}
+
+function authChallenge(error: HttpError) {
+  const headers = new Headers({
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'WWW-Authenticate': 'Bearer realm="todolist-mcp", scope="review:read proposal:write"',
+  });
+  return new Response(JSON.stringify({ error: { code: error.code, message: error.message } }), { status: error.status, headers });
+}
+
 Deno.serve(async request => {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: {
     'Access-Control-Allow-Origin': request.headers.get('origin') || '*',
@@ -179,6 +206,22 @@ Deno.serve(async request => {
     'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
   } });
   try {
+    // Let clients perform the MCP initialize/tools-list handshake before
+    // credentials are supplied, but reject all data operations with a proper
+    // 401 challenge instead of allowing the SDK to turn auth failures into a
+    // generic JSON-RPC 500 response.
+    const method = await requestMethod(request);
+    if (method && !PUBLIC_MCP_METHODS.has(method) && !request.headers.get('authorization')) {
+      return authChallenge(new HttpError(401, 'invalid_integration_token', '缺少集成令牌'));
+    }
+    if (request.headers.get('authorization')) {
+      try {
+        await authenticateIntegrationToken(request);
+      } catch (error) {
+        if (error instanceof HttpError) return authChallenge(error);
+        throw error;
+      }
+    }
     const response = await handler.fetch(request);
     const headers = new Headers(response.headers);
     headers.set('Cache-Control', 'no-store');

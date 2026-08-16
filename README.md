@@ -85,3 +85,15 @@ bearer_token_env_var = "TODOLIST_MCP_TOKEN"
 ```
 
 MCP has read-only tools plus `create_change_proposal`; proposals expire after seven days and require per-item web confirmation before any permitted operation is applied.
+
+### Connect Gemini Spark
+
+1. In TodoList, open `AI Companion -> Codex Integration`, create a token with `review:read` and `proposal:write`, and keep the one-time plaintext private.
+2. In Gemini web, open `Settings & help -> Connected Apps -> Custom apps for Spark` and enter:
+
+   `https://zfxvwlddhxhjumwedsjt.supabase.co/functions/v1/todolist-mcp`
+
+3. If Gemini shows `Advanced features` with `Client ID` and `Client secret`, use `todolist` as the client ID and paste the `tdl_...` integration token as the client secret. The server accepts both Basic credentials and `Authorization: Bearer` credentials.
+4. After connecting, type `@`, select TodoList, and test with “List my recent open tasks”. Reads are data-safe; changes are saved as proposals and still require item-by-item confirmation in TodoList.
+
+Never put the token in the URL or commit it to Git. Google currently limits Gemini custom Connected Apps to eligible personal accounts in supported regions with Keep Activity enabled.

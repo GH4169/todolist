@@ -36,9 +36,25 @@ export type IntegrationIdentity = {
   serviceClient: SupabaseClient;
 };
 
+function tokenFromAuthorization(authorization: string | null) {
+  if (!authorization) return '';
+  if (authorization.startsWith('Bearer ')) return authorization.slice(7).trim();
+  if (authorization.startsWith('Basic ')) {
+    try {
+      const decoded = atob(authorization.slice(6).trim());
+      const separator = decoded.indexOf(':');
+      // Gemini's advanced MCP credentials are sent as HTTP Basic auth. The
+      // integration token is the client secret; the client id is ignored.
+      return separator >= 0 ? decoded.slice(separator + 1).trim() : '';
+    } catch {
+      return '';
+    }
+  }
+  return '';
+}
+
 export async function authenticateIntegrationToken(request: Request, requiredScope?: string): Promise<IntegrationIdentity> {
-  const authorization = request.headers.get('authorization');
-  const token = authorization?.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
+  const token = tokenFromAuthorization(request.headers.get('authorization'));
   if (!token.startsWith('tdl_') || token.length < 30 || token.length > 100) {
     throw new HttpError(401, 'invalid_integration_token', '集成令牌无效或已过期');
   }

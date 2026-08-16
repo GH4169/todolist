@@ -84,3 +84,17 @@ bearer_token_env_var = "TODOLIST_MCP_TOKEN"
 ```
 
 MCP 提供读取工具和 `create_change_proposal`；提案七天后过期，任何允许的任务操作都必须在网页中逐项勾选并二次确认。
+
+### 连接 Gemini Spark
+
+Gemini 的 Custom connected app 会先匿名检查 MCP 握手，再调用工具。请按下面顺序操作：
+
+1. 在 TodoList 的“AI 伙伴 → Codex 集成”点击“新建令牌”，勾选“读取记录”和“保存提案”。令牌只显示一次，不要发给任何人。
+2. 在 Gemini 网页版打开“Settings & help → Connected Apps → Custom apps for Spark”，填入下面的 MCP URL：
+
+   `https://zfxvwlddhxhjumwedsjt.supabase.co/functions/v1/todolist-mcp`
+
+3. 如果 Gemini 展开“Advanced features”并要求 `Client ID` 与 `Client secret`，`Client ID` 可填写 `todolist`，`Client secret` 填入刚创建的 `tdl_...` 令牌。服务端同时兼容 Gemini 发送的 Basic 凭据和 `Authorization: Bearer` 凭据。
+4. 连接成功后，在 Gemini 输入 `@`，选择 TodoList，再测试“列出我最近未完成的任务”。读取任务和记忆不会修改数据；任何修改只能保存为提案，并回到 TodoList 网页逐项确认。
+
+不要把令牌拼到 URL 查询参数中，也不要把令牌提交到 Git。Gemini 自定义 Connected Apps 目前要求个人账号、18 岁以上、美国地区并开启 Keep Activity；这些资格由 Google 控制。
