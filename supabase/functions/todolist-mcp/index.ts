@@ -7,18 +7,6 @@ import { createChangeProposal, getChangeProposal } from '../_shared/proposals.ts
 
 const SERVER_INFO = { name: 'todolist-mcp', version: '1.0.0' };
 const TOOL_SCOPE = { read: 'review:read', proposal: 'proposal:write' } as const;
-const READ_ONLY_TOOL = {
-  readOnlyHint: true,
-  destructiveHint: false,
-  idempotentHint: true,
-  openWorldHint: false,
-} as const;
-const PROPOSAL_TOOL = {
-  readOnlyHint: false,
-  destructiveHint: false,
-  idempotentHint: false,
-  openWorldHint: false,
-} as const;
 
 function requireScope(identity: IntegrationIdentity, scope: string) {
   if (!identity.scopes.includes(scope)) throw new HttpError(403, 'integration_scope_required', '集成令牌没有执行此操作的权限');
@@ -56,7 +44,6 @@ function makeServer(identity: IntegrationIdentity | null) {
   server.registerTool('search_context', {
     title: 'Search TodoList context',
     description: 'Search the complete TodoList history and confirmed memories without modifying tasks.',
-    annotations: READ_ONLY_TOOL,
     inputSchema: {
       search_terms: z.array(z.string().min(1).max(80)).max(8).optional(),
       date_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
@@ -85,7 +72,6 @@ function makeServer(identity: IntegrationIdentity | null) {
   server.registerTool('list_tasks', {
     title: 'List TodoList tasks',
     description: 'List owned tasks with optional completion and planned-date filters.',
-    annotations: READ_ONLY_TOOL,
     inputSchema: {
       status: z.enum(['all', 'open', 'completed']).optional(),
       planned_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
@@ -110,7 +96,6 @@ function makeServer(identity: IntegrationIdentity | null) {
   server.registerTool('get_task', {
     title: 'Get a TodoList task',
     description: 'Read one owned task, its children, completion goals, and task evaluations.',
-    annotations: READ_ONLY_TOOL,
     inputSchema: { task_id: z.string().uuid() },
   }, async args => withLog(identity, 'get_task', async () => {
     requireScope(identity, TOOL_SCOPE.read);
@@ -133,7 +118,6 @@ function makeServer(identity: IntegrationIdentity | null) {
   server.registerTool('list_memories', {
     title: 'List confirmed memories',
     description: 'List enabled or disabled long-term memories owned by the current user.',
-    annotations: READ_ONLY_TOOL,
     inputSchema: { status: z.enum(['enabled', 'disabled', 'all']).optional(), limit: z.number().int().min(1).max(50).optional() },
   }, async args => withLog(identity, 'list_memories', async () => {
     requireScope(identity, TOOL_SCOPE.read);
@@ -148,7 +132,6 @@ function makeServer(identity: IntegrationIdentity | null) {
   server.registerTool('create_change_proposal', {
     title: 'Create a TodoList change proposal',
     description: 'Save up to 10 reviewed task changes for web confirmation. This never modifies tasks directly.',
-    annotations: PROPOSAL_TOOL,
     inputSchema: {
       title: z.string().min(1).max(120),
       summary: z.string().max(1000).optional(),
@@ -175,7 +158,6 @@ function makeServer(identity: IntegrationIdentity | null) {
   server.registerTool('get_change_proposal', {
     title: 'Get a TodoList change proposal',
     description: 'Read a saved proposal and its per-item execution state.',
-    annotations: READ_ONLY_TOOL,
     inputSchema: { proposal_id: z.string().uuid() },
   }, async args => withLog(identity, 'get_change_proposal', async () => {
     requireScope(identity, TOOL_SCOPE.read);
