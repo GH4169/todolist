@@ -63,7 +63,7 @@ error
 
 集成令牌由 `integration-token` 创建、列出和撤销。令牌默认具有 `review:read` 与 `proposal:write`，90 天过期，每用户最多 5 个有效令牌。明文只在创建时返回一次；数据库只保存 `INTEGRATION_TOKEN_PEPPER` 参与计算的 SHA-256 哈希。`mcp_request_logs` 只保存工具名、状态、耗时和结果数量，不记录正文、令牌或 Authorization 头。
 
-Gemini Spark 通过标准 MCP OAuth 2.1 连接：MCP 的 401 响应提供 Protected Resource Metadata 地址，元数据把 Supabase Auth 声明为 Authorization Server。Supabase 开启 Dynamic Client Registration，并把授权确认页指向 `/todolist/`；用户登录 TodoList 并明确同意后，Gemini 才获得绑定该用户的短期访问令牌。Codex CLI 继续使用独立的 `tdl_...` 集成令牌，两类凭据都映射到相同的只读/提案权限边界。
+Gemini Spark 通过标准 MCP OAuth 2.1 连接：MCP 的 401 响应提供 Protected Resource Metadata 地址，元数据把 Supabase Auth 声明为 Authorization Server。Supabase 开启 Dynamic Client Registration，并把授权确认页路径设为 `/`；由于站点地址已经是 `https://gh4169.github.io/todolist/`，最终授权页是该地址本身，避免重复拼接 `/todolist/todolist/`。用户登录 TodoList 并明确同意后，Gemini 才获得绑定该用户的短期访问令牌。Codex CLI 继续使用独立的 `tdl_...` 集成令牌，两类凭据都映射到相同的只读/提案权限边界。
 
 Codex CLI 示例：
 
@@ -83,7 +83,7 @@ bearer_token_env_var = "TODOLIST_MCP_TOKEN"
 
 会话、消息、记忆和提案向 `authenticated` 角色开放必要的自有记录权限并启用 RLS；模型凭据、集成令牌和 MCP 日志仅允许 service role 访问。`search_ai_context_for_user(...)` 撤销 `anon/authenticated/public` 执行权限，只授予 `service_role`。
 
-部署环境新增 `INTEGRATION_TOKEN_PEPPER` 和 `PUBLIC_APP_URL`，与既有 `AI_CREDENTIAL_MASTER_KEY`、Supabase 密钥和 `ALLOWED_ORIGINS` 一起配置。需部署 `ai-chat`、`integration-token`、`ai-proposal`、`todolist-mcp`；MCP 自行验证自定义 Bearer Token 或 Supabase OAuth JWT，因此关闭网关 JWT 校验。Supabase Auth 还需开启 OAuth Server 和 Dynamic Client Registration，并将 Authorization Path 设置为 `/todolist/`。
+部署环境新增 `INTEGRATION_TOKEN_PEPPER` 和 `PUBLIC_APP_URL`，与既有 `AI_CREDENTIAL_MASTER_KEY`、Supabase 密钥和 `ALLOWED_ORIGINS` 一起配置。需部署 `ai-chat`、`integration-token`、`ai-proposal`、`todolist-mcp`；MCP 自行验证自定义 Bearer Token 或 Supabase OAuth JWT，因此关闭网关 JWT 校验。Supabase Auth 还需开启 OAuth Server 和 Dynamic Client Registration，并将 Authorization Path 设置为 `/`（站点地址已包含 `/todolist/`）。
 
 ## 8. 验收
 

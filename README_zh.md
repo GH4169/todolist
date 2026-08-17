@@ -85,7 +85,7 @@ bearer_token_env_var = "TODOLIST_MCP_TOKEN"
 
 MCP 提供读取工具和 `create_change_proposal`；提案七天后过期，任何允许的任务操作都必须在网页中逐项勾选并二次确认。
 
-Gemini 使用标准 OAuth 2.1，不使用上面的 Codex 集成令牌。请在 Supabase Dashboard 的 `Authentication → OAuth Server` 中开启 OAuth Server，将 Authorization Path 设为 `/todolist/`，并开启 Dynamic Client Registration。MCP 会通过 Protected Resource Metadata 引导 Gemini 使用 Supabase Auth，TodoList 网页负责显示用户授权确认页。
+Gemini 使用标准 OAuth 2.1，不使用上面的 Codex 集成令牌。请在 Supabase Dashboard 的 `Authentication → OAuth Server` 中开启 OAuth Server，将 Authorization Path 设为 `/`（因为站点地址本身已经是 `/todolist/`），并开启 Dynamic Client Registration。MCP 会通过 Protected Resource Metadata 引导 Gemini 使用 Supabase Auth，TodoList 网页负责显示用户授权确认页。
 
 ### 连接 Gemini Spark
 

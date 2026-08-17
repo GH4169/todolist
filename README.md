@@ -86,7 +86,7 @@ bearer_token_env_var = "TODOLIST_MCP_TOKEN"
 
 MCP has read-only tools plus `create_change_proposal`; proposals expire after seven days and require per-item web confirmation before any permitted operation is applied.
 
-Gemini uses standard OAuth 2.1 rather than the Codex integration token above. In Supabase Dashboard, enable `Authentication -> OAuth Server`, set the authorization path to `/todolist/`, and enable dynamic client registration. The MCP server advertises Supabase Auth through Protected Resource Metadata, while the TodoList web app presents the user consent screen.
+Gemini uses standard OAuth 2.1 rather than the Codex integration token above. In Supabase Dashboard, enable `Authentication -> OAuth Server`, set the authorization path to `/` (the Site URL already includes `/todolist/`), and enable dynamic client registration. The MCP server advertises Supabase Auth through Protected Resource Metadata, while the TodoList web app presents the user consent screen.
 
 ### Connect Gemini Spark
 
