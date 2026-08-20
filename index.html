@@ -380,7 +380,7 @@
           </section>
 
           <section class="settings-section ai-integration-section" aria-labelledby="integrationTitle">
-            <div class="ai-settings-heading"><div><h2 id="integrationTitle">Codex 集成</h2><p>令牌只在创建时显示一次，默认 90 天后过期。</p></div><button class="ai-credential-save" id="createIntegrationTokenBtn" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>新建令牌</span></button></div>
+            <div class="ai-settings-heading"><div><h2 id="integrationTitle">Codex 集成</h2><p>令牌永久有效且只在创建时显示一次，可随时主动撤销。</p></div><button class="ai-credential-save" id="createIntegrationTokenBtn" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>新建令牌</span></button></div>
             <div class="integration-token-create" id="integrationTokenCreate" hidden><label for="integrationTokenName">令牌名称</label><input id="integrationTokenName" maxlength="80" placeholder="例如：我的 Codex"><div class="integration-scope-options"><label><input id="integrationScopeRead" type="checkbox" checked>读取记录</label><label><input id="integrationScopeProposal" type="checkbox" checked>保存提案</label></div><div class="ai-credential-actions"><button class="dialog-secondary" id="cancelIntegrationTokenBtn" type="button">取消</button><button class="dialog-primary" id="saveIntegrationTokenBtn" type="button">创建</button></div></div>
             <p class="integration-token-once" id="integrationTokenOnce" hidden></p><ul class="integration-token-list" id="integrationTokenList"><li>正在读取令牌...</li></ul>
           </section>

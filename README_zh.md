@@ -75,7 +75,7 @@ npx supabase functions deploy integration-token
 npx supabase functions deploy todolist-mcp
 ```
 
-Supabase 会向函数提供 `SUPABASE_URL`、`SUPABASE_ANON_KEY` 和 `SUPABASE_SERVICE_ROLE_KEY`，不要把这些服务端凭据放进网页代码。部署后，在设置页先保存并验证 API Key，再打开“AI 伙伴”。集成令牌最多同时保留五个，有效期 90 天，明文只在创建时显示一次。Codex 可通过环境变量接入：
+Supabase 会向函数提供 `SUPABASE_URL`、`SUPABASE_ANON_KEY` 和 `SUPABASE_SERVICE_ROLE_KEY`，不要把这些服务端凭据放进网页代码。部署后，在设置页先保存并验证 API Key，再打开“AI 伙伴”。集成令牌最多同时保留五个，永久有效且可随时撤销，明文只在创建时显示一次。Codex 可通过环境变量接入：
 
 ```toml
 [mcp_servers.todolist]

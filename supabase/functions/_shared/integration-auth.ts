@@ -55,19 +55,19 @@ function tokenFromAuthorization(authorization: string | null) {
 export async function authenticateMcpRequest(request: Request, requiredScope?: string): Promise<IntegrationIdentity> {
   const token = tokenFromAuthorization(request.headers.get('authorization'));
   if (!token) {
-    throw new HttpError(401, 'invalid_integration_token', '集成令牌无效或已过期');
+    throw new HttpError(401, 'invalid_integration_token', '集成令牌无效或已撤销');
   }
   const serviceClient = createServiceClient();
 
   if (token.startsWith('tdl_')) {
     if (token.length < 30 || token.length > 100) {
-      throw new HttpError(401, 'invalid_integration_token', '集成令牌无效或已过期');
+      throw new HttpError(401, 'invalid_integration_token', '集成令牌无效或已撤销');
     }
     const tokenHash = await hashIntegrationToken(token);
     const { data, error } = await serviceClient.from('integration_tokens')
-      .select('id,user_id,scopes,expires_at,revoked_at').eq('token_hash', tokenHash).maybeSingle();
-    if (error || !data || data.revoked_at || new Date(data.expires_at).getTime() <= Date.now()) {
-      throw new HttpError(401, 'invalid_integration_token', '集成令牌无效或已过期');
+      .select('id,user_id,scopes,revoked_at').eq('token_hash', tokenHash).maybeSingle();
+    if (error || !data || data.revoked_at) {
+      throw new HttpError(401, 'invalid_integration_token', '集成令牌无效或已撤销');
     }
     const scopes = Array.isArray(data.scopes) ? data.scopes : [];
     if (requiredScope && !scopes.includes(requiredScope)) {

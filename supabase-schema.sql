@@ -311,7 +311,7 @@ create table if not exists public.integration_tokens (
   token_prefix text not null check (length(token_prefix) between 8 and 24),
   token_hash text not null unique,
   scopes text[] not null default array['review:read']::text[],
-  expires_at timestamptz not null default (now() + interval '90 days'),
+  expires_at timestamptz,
   last_used_at timestamptz,
   revoked_at timestamptz,
   created_at timestamptz not null default now(),
@@ -1092,6 +1092,15 @@ begin
   end if;
 end
 $$;
+
+-- 集成令牌永久有效，只有用户主动撤销时才会失效。保留字段以兼容已有部署。
+alter table public.integration_tokens
+  alter column expires_at drop default,
+  alter column expires_at drop not null;
+
+update public.integration_tokens
+set expires_at = null
+where expires_at is not null;
 
 -- 依赖 integration_tokens / ai_change_proposals 的增量字段必须在旧表创建后执行。
 create table if not exists public.mcp_request_logs (

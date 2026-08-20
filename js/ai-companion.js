@@ -273,7 +273,11 @@
     try {
       const payload = await listIntegrationTokens();
       const tokens = payload.tokens || [];
-      tokenList.innerHTML = tokens.length ? tokens.map(token => '<li><div><strong>' + esc(token.name) + '</strong><small>' + esc(token.token_prefix) + ' · 到期 ' + esc(formatTime(token.expires_at)) + '</small></div><button type="button" data-token-revoke="' + esc(token.id) + '">撤销</button></li>').join('') : '<li class="integration-token-empty">还没有集成令牌。</li>';
+      tokenList.innerHTML = tokens.length ? tokens.map(token => {
+        const status = token.revoked_at ? '已撤销' : '永久有效';
+        const action = token.revoked_at ? '' : '<button type="button" data-token-revoke="' + esc(token.id) + '">撤销</button>';
+        return '<li><div><strong>' + esc(token.name) + '</strong><small>' + esc(token.token_prefix) + ' · ' + status + '</small></div>' + action + '</li>';
+      }).join('') : '<li class="integration-token-empty">还没有集成令牌。</li>';
     } catch (error) {
       tokenList.innerHTML = '<li class="integration-token-empty">' + esc(error.message || '无法读取令牌') + '</li>';
     }

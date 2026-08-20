@@ -76,7 +76,7 @@ npx supabase functions deploy integration-token
 npx supabase functions deploy todolist-mcp
 ```
 
-Supabase provides `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` to the functions. Do not expose those server credentials in browser code. After deployment, save and verify an API key in Settings before opening AI Companion. The integration-token page can create at most five active 90-day tokens; the plaintext is shown only once. Configure Codex with the token through an environment variable, for example:
+Supabase provides `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` to the functions. Do not expose those server credentials in browser code. After deployment, save and verify an API key in Settings before opening AI Companion. The integration-token page can keep at most five active tokens; they remain valid until revoked, and the plaintext is shown only once. Configure Codex with the token through an environment variable, for example:
 
 ```toml
 [mcp_servers.todolist]

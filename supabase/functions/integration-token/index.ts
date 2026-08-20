@@ -10,7 +10,7 @@ function publicToken(row: Record<string, unknown>) {
     name: row.name,
     token_prefix: row.token_prefix,
     scopes: row.scopes,
-    expires_at: row.expires_at,
+    expires_at: null,
     last_used_at: row.last_used_at,
     revoked_at: row.revoked_at,
     created_at: row.created_at,
@@ -39,20 +39,19 @@ Deno.serve(async request => {
       if (!scopes.length) throw new HttpError(400, 'invalid_token_scopes', '至少选择一个有效权限');
       const { count, error: countError } = await clients.serviceClient.from('integration_tokens')
         .select('id', { count: 'exact', head: true }).eq('user_id', clients.user.id)
-        .is('revoked_at', null).gt('expires_at', new Date().toISOString());
+        .is('revoked_at', null);
       if (countError) throw new HttpError(500, 'token_limit_check_failed', '无法检查令牌数量');
       if ((count || 0) >= 5) throw new HttpError(409, 'active_token_limit', '最多保留 5 个有效集成令牌');
 
       const token = createIntegrationTokenValue();
       const tokenHash = await hashIntegrationToken(token);
-      const expiresAt = new Date(Date.now() + 90 * 86400000).toISOString();
       const { data, error } = await clients.serviceClient.from('integration_tokens').insert({
         user_id: clients.user.id,
         name,
         token_prefix: token.slice(0, 12),
         token_hash: tokenHash,
         scopes,
-        expires_at: expiresAt,
+        expires_at: null,
       }).select('id,name,token_prefix,scopes,expires_at,last_used_at,revoked_at,created_at').single();
       if (error || !data) throw new HttpError(500, 'token_create_failed', '无法创建集成令牌');
       return jsonResponse(request, { token, token_record: publicToken(data), shown_once: true }, 201);

@@ -61,7 +61,7 @@ error
 - `create_change_proposal`
 - `get_change_proposal`
 
-集成令牌由 `integration-token` 创建、列出和撤销。令牌默认具有 `review:read` 与 `proposal:write`，90 天过期，每用户最多 5 个有效令牌。明文只在创建时返回一次；数据库只保存 `INTEGRATION_TOKEN_PEPPER` 参与计算的 SHA-256 哈希。`mcp_request_logs` 只保存工具名、状态、耗时和结果数量，不记录正文、令牌或 Authorization 头。
+集成令牌由 `integration-token` 创建、列出和撤销。令牌默认具有 `review:read` 与 `proposal:write`，永久有效且可随时撤销，每用户最多 5 个有效令牌。明文只在创建时返回一次；数据库只保存 `INTEGRATION_TOKEN_PEPPER` 参与计算的 SHA-256 哈希。`mcp_request_logs` 只保存工具名、状态、耗时和结果数量，不记录正文、令牌或 Authorization 头。
 
 Gemini Spark 通过标准 MCP OAuth 2.1 连接：MCP 的 401 响应提供 Protected Resource Metadata 地址，元数据把 Supabase Auth 声明为 Authorization Server。Supabase 开启 Dynamic Client Registration，并把授权确认页路径设为 `/`；由于站点地址已经是 `https://gh4169.github.io/todolist/`，最终授权页是该地址本身，避免重复拼接 `/todolist/todolist/`。用户登录 TodoList 并明确同意后，Gemini 才获得绑定该用户的短期访问令牌。Codex CLI 继续使用独立的 `tdl_...` 集成令牌，两类凭据都映射到相同的只读/提案权限边界。
 
@@ -90,7 +90,7 @@ bearer_token_env_var = "TODOLIST_MCP_TOKEN"
 - SSE/JSON 增量解析覆盖 Unicode、转义字符和任意分块边界。
 - 覆盖无记录、全历史命中、上下文裁剪、排除来源重答、停止、断流和中转站错误。
 - 使用两个账号验证会话、记忆、令牌、MCP、提案和任务完全隔离。
-- 覆盖令牌过期/撤销、错误权限、限流和日志脱敏。
+- 覆盖令牌撤销、错误权限、限流和日志脱敏。
 - 覆盖四类操作的成功、冲突、重复提交、部分成功与过期。
 - Codex CLI 可以初始化 MCP、列出工具、读取数据和保存提案，但不能直接修改任务。
 - Playwright 检查桌面与 390px 移动端的会话、流式回复、来源、记忆和提案流程。
