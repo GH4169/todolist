@@ -5,3 +5,12 @@ output/playwright/*
 # Local Supabase function secrets
 supabase/functions/.env
 supabase/functions/.env.local
+
+# Keep only encrypted database archives in Git.
+backups/*.dump
+backups/*.sql
+backups/*.json
+backups/*.tar
+backups/*.tar.gz
+backups/*.agekey
+backup-extracted/
