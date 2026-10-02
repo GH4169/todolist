@@ -48,6 +48,14 @@ sha256sum -c backups/todolist-时间.tar.gz.age.sha256
 AGE_IDENTITY_FILE=backups/backup.agekey ./scripts/extract-supabase-backup.sh backups/todolist-时间.tar.gz.age
 ```
 
+只查看一个账号的数据，不必解压全部用户数据：
+
+```sh
+node scripts/show-user-backup.mjs backups/todolist-时间.tar.gz.age 1271199803@qq.com
+```
+
+脚本只把匹配账号的数据写入被 Git 忽略的 `backup-extracted/user-1271199803_qq.com.json`，并在终端列出每张表的行数。`Rows without a user_id` 是无法归属到特定账号的记录，不会放进筛选文件。
+
 解密文件会写入被 Git 忽略的 `backup-extracted/`，不可提交。做过一次成功的解密检查，才能确认备份密钥匹配。
 
 ## 迁移到 CloudBase
