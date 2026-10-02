@@ -1,6 +1,8 @@
 # 数据备份与迁移
 
-仓库是公开的，因此只推送 age 加密后的备份。备份由 Supabase CLI 通过已授权的 Management API 读取，不需要数据库密码。
+备份由 Supabase CLI 通过已授权的 Management API 读取，不需要数据库密码。仓库维护者已选择公开解密密钥，因此仓库中的加密归档对任何人都可解开，不提供数据保密性。
+
+当前公开密钥文件为 `backups/backup.agekey`。不要用它保护希望保密的数据；如需保密，应创建新的私有密钥，并将密文存放在私有仓库或离线备份中。
 
 ## 首次准备
 
@@ -20,7 +22,7 @@ age-keygen -o ~/.config/todolist/backup.agekey
 chmod 600 ~/.config/todolist/backup.agekey
 ```
 
-必须把 `~/.config/todolist/backup.agekey` 另存到离线位置（例如 USB 或密码管理器的安全附件）。它丢失后，GitHub 上的密文无法解开。绝不能把它提交到 GitHub。
+通常应把 `~/.config/todolist/backup.agekey` 另存到离线位置。当前仓库公开了这把密钥，因此不需要为本仓库归档另存密钥；任何克隆仓库的人都可以解密归档。
 
 ## 创建并上传备份
 
@@ -38,6 +40,12 @@ git push
 ```sh
 sha256sum -c backups/todolist-时间.tar.gz.age.sha256
 ./scripts/extract-supabase-backup.sh backups/todolist-时间.tar.gz.age
+```
+
+从其他设备解密时，可使用仓库中的公开密钥：
+
+```sh
+AGE_IDENTITY_FILE=backups/backup.agekey ./scripts/extract-supabase-backup.sh backups/todolist-时间.tar.gz.age
 ```
 
 解密文件会写入被 Git 忽略的 `backup-extracted/`，不可提交。做过一次成功的解密检查，才能确认备份密钥匹配。
